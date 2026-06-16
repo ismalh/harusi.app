@@ -1,0 +1,2 @@
+CREATE POLICY "Admins can read all messages" ON public.messages FOR SELECT USING (public.has_role(auth.uid(), 'admin'));
+CREATE POLICY "Admins can read all conversations" ON public.conversations FOR SELECT USING (public.has_role(auth.uid(), 'admin'));

@@ -1,0 +1,58 @@
+Prompt 0 — Fix signup (envoie ça EN PREMIER) :
+"Dans les paramètres d'authentification Supabase, active les inscriptions par email. L'erreur 'Signups not allowed for this instance' apparaît quand on essaie de se connecter avec OTP. Corrige ça en activant les inscriptions dans les paramètres du provider email Supabase."
+
+Prompt 1 — Migration SQL :
+"Ajoute ces colonnes à la table profiles avec une nouvelle migration :
+
+origine_principale TEXT, origine_secondaire TEXT, nationalite TEXT, nationalite_secondaire TEXT
+lieu_naissance TEXT
+taille TEXT (valeurs : petit, moyen, grand)
+corpulence TEXT (valeurs : mince, normale, sportive, en surpoids)
+tenue_vestimentaire TEXT
+accepte_enfants BOOLEAN, nb_enfants_souhaites INTEGER
+priere_vendredi BOOLEAN, rapport_mosquee TEXT, rapport_coran TEXT, rapport_arabe TEXT
+niveau_instruction_religieuse TEXT, ecole_jurisprudence TEXT
+en_hijra BOOLEAN, souhaite_hijra BOOLEAN, hijra_quand TEXT
+accepte_demenager BOOLEAN, situation_sante TEXT
+en_polygamie BOOLEAN, accepte_polygamie BOOLEAN
+description_recherche TEXT, criteres_redhibitoires TEXT"
+
+et dis moi à quoi ça servira ?
+
+
+Prompt 2 — Onboarding étapes 1 et 2 :
+"Crée un onboarding en plusieurs étapes à l'URL /onboarding. Après la première connexion, si onboarding_completed est false, redirige automatiquement l'utilisateur vers /onboarding.
+Étape 1 — Identité & Origine : prénom (texte), genre (homme/femme), date de naissance, origine principale (texte), deuxième origine (texte, facultatif), nationalité (texte), deuxième nationalité (texte, facultatif), île comorienne (Ngazidja/Ndzouani/Mwali/Autre), lieu de naissance (texte), ville de résidence (texte), langues parlées en sélection multiple (Shikomori, Français, Arabe, Anglais, Autres).
+Étape 2 — Situation personnelle : statut matrimonial (célibataire/divorcé/veuf), a des enfants (oui/non), si oui : nombre d'enfants, accepte les enfants de l'autre (oui/non), nombre d'enfants souhaités, profession.
+Affiche une barre de progression en haut. Sauvegarde chaque étape dans Supabase avant de passer à la suivante."
+
+Prompt 3 — Onboarding étapes 3 et 4 :
+"Ajoute les étapes 3 et 4 à l'onboarding :
+Étape 3 — Physique & Apparence : taille (petit/moyen/grand), corpulence (mince/normale/sportive/en surpoids), tenue vestimentaire (texte). Si le genre est femme : porte le hijab (oui/non). Si le genre est homme : porte la barbe (oui/non).
+Étape 4 — Religion & Pratique : fréquence de prière (rarement/parfois/souvent/toujours). Si homme : prie-t-il le vendredi à la mosquée (oui/non), rapport à la mosquée (texte). Rapport au Coran (texte), rapport à la langue arabe (texte), niveau d'instruction religieuse (texte), école de jurisprudence suivie (texte, facultatif), est en hijra (oui/non, avec info-bulle explicative : 'Quitter un pays non-musulman pour vivre en terre d'islam'), souhaite faire la hijra (oui/non), si oui : quand (texte)."
+
+Prompt 4 — Onboarding étapes 5 et 6 + photo :
+"Ajoute les étapes 5 et 6 à l'onboarding, ainsi que l'upload de photo :
+Étape 5 — Projet de vie : accepte de déménager (oui/non), situation de santé particulière (texte, facultatif). Si homme : est actuellement en situation de polygamie (oui/non). Si femme : accepte la polygamie (oui/non). Le champ 'looking_for' est automatiquement défini sur le genre opposé.
+Étape 6 — Présentation libre : description personnelle (zone de texte, max 1000 caractères), profil recherché (zone de texte, max 1000 caractères), critères rédhibitoires (zone de texte, max 500 caractères), upload de photo vers le bucket Supabase 'profile-photos'.
+À la fin de la dernière étape : mettre onboarding_completed = true, onboarding_step = 6, rediriger vers /home."
+
+Prompt 5 — Demande de contact :
+"Implémente le système de demande de contact en utilisant la table match_requests existante.
+Sur la page /profil/$id : remplace le bouton 'envoyer un message' par un bouton 'Envoyer une demande' qui insère une ligne dans match_requests (sender_id, receiver_id, statut = 'pending').
+Ajoute une page /demandes qui affiche les demandes reçues en attente avec des boutons Accepter et Refuser. Accepter met le statut à 'accepted' et crée la conversation. Refuser met le statut à 'declined'.
+Seules les demandes acceptées permettent d'ouvrir une conversation. Ajoute le lien vers /demandes dans la barre de navigation avec un badge indiquant le nombre de demandes en attente."
+"Je ne sais pas comment tu feras mais je veux que dans la page principale où les utilisateur seront après avoir atteint toutes les étapes de connexion je veux que les hommes voient les profil des femmes et les femmes voient les profil des hommes genre ils voient leut photo, age, infos, nom... "
+
+Prompt 6 — Wali :
+"Implémente le système wali :
+Dans /mon-profil, si le genre est femme, ajoute une section 'Mon wali' avec un formulaire : nom complet (texte), relation (père/frère/oncle/tuteur/autre), téléphone (texte), email (texte), notes (texte, facultatif). Sauvegarde dans la table wali existante.
+Quand une demande de contact est acceptée et qu'une conversation démarre, si la femme a un wali avec un email, envoie un email au wali depuis notify.harusi.fr avec : son prénom, le prénom de l'autre personne, et un lien unique en lecture seule /wali/:token.
+Crée la page /wali/:token (publique, sans connexion requise) qui affiche la conversation en lecture seule grâce à un token sécurisé stocké dans une nouvelle table wali_tokens (token UUID, conversation_id, wali_user_id, expires_at 30 jours)."
+
+Prompt 7 — Filtres :
+"Ajoute des filtres avancés sur /home : tranche d'âge (min/max), île (déjà existant), statut matrimonial (célibataire/divorcé/veuf), niveau de religiosité (débutant/pratiquant/très pratiquant), en hijra (oui/non), accepte la polygamie (oui/non, visible uniquement si le visiteur est un homme). Affiche les filtres dans un panneau rétractable sous le header."
+
+Prompt 8 — Finitions :
+"Ajoute la suppression de compte : dans /mon-profil, ajoute un bouton 'Supprimer mon compte' en rouge en bas de page. Au clic, affiche une fenêtre de confirmation, puis supprime le profil et le compte auth de l'utilisateur. Redirige vers /connexion après suppression.
+Ajoute aussi une page /parametres accessible depuis le profil avec : bouton de déconnexion, lien vers les CGU, lien vers les règles de la communauté, lien vers la politique de confidentialité, et suppression de compte."
