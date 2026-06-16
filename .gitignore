@@ -30,3 +30,4 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+supabase/migrations/ALL_MIGRATIONS.sql
