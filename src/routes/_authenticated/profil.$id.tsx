@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, Heart, Flag } from "lucide-react";
+import { ArrowLeft, Heart, Flag, BadgeCheck } from "lucide-react";
 import { islandLabel } from "@/lib/islands";
 
 export const Route = createFileRoute("/_authenticated/profil/$id")({
@@ -14,7 +14,7 @@ function ProfilPage() {
   const [p, setP] = useState<any>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [me, setMe] = useState<string | null>(null);
-  const [demandeStatus, setDemandeStatus] = useState<string | null>(null); // null | 'pending' | 'accepted' | 'declined'
+  const [demandeStatus, setDemandeStatus] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
@@ -30,7 +30,6 @@ function ProfilPage() {
         setPhoto(s?.signedUrl ?? null);
       }
 
-      // Vérifier s'il existe déjà une demande
       const { data: req } = await supabase
         .from("match_requests")
         .select("status")
@@ -38,6 +37,13 @@ function ProfilPage() {
         .eq("receiver_id", id)
         .maybeSingle();
       if (req) setDemandeStatus(req.status);
+
+      if (auth.user.id !== id) {
+        await (supabase as any).from("profile_views").insert({
+          viewer_id: auth.user.id,
+          viewed_id: id,
+        });
+      }
     })();
   }, [id]);
 
@@ -70,13 +76,22 @@ function ProfilPage() {
         </button>
       </header>
       <main className="mx-auto max-w-md px-4 py-4">
-        {photo && <img src={photo} alt="" className="aspect-square w-full rounded-xl object-cover" />}
-        {!photo && <div className="aspect-square w-full rounded-xl bg-muted" />}
+        <div className="relative">
+          {photo && <img src={photo} alt="" className="aspect-square w-full rounded-xl object-cover" />}
+          {!photo && <div className="aspect-square w-full rounded-xl bg-muted" />}
+          {p.plan === "premium" && (
+            <span className="absolute right-2 top-2 rounded-full bg-amber-500 px-2 py-1 text-xs font-bold text-white">
+              Premium
+            </span>
+          )}
+        </div>
 
-        <h1 className="mt-3 font-serif text-2xl">{p.first_name}, {p.age} ans</h1>
+        <div className="mt-3 flex items-center gap-1.5">
+          <h1 className="font-serif text-2xl">{p.first_name}, {p.age} ans</h1>
+          {p.verified && <BadgeCheck className="h-5 w-5 shrink-0 text-blue-500" />}
+        </div>
         <p className="text-sm text-muted-foreground">{p.city} · {islandLabel(p.island)}</p>
 
-        {/* Infos */}
         <div className="mt-4 space-y-2 rounded-xl border border-border bg-card p-4 text-sm">
           {p.origine_principale && <p><span className="font-medium">Origine :</span> {p.origine_principale}{p.origine_secondaire ? ` / ${p.origine_secondaire}` : ""}</p>}
           {p.nationalite && <p><span className="font-medium">Nationalité :</span> {p.nationalite}</p>}

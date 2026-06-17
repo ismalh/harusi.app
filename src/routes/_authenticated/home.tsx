@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { HarusiLogo } from "@/components/HarusiLogo";
 import { ISLANDS, islandLabel } from "@/lib/islands";
-import { MessageCircle, User, Shield, LogOut, Bell, SlidersHorizontal, X } from "lucide-react";
+import { MessageCircle, User, Shield, LogOut, Bell, SlidersHorizontal, X, BadgeCheck } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/home")({
   ssr: false,
@@ -49,6 +49,9 @@ function HomePage() {
     if (enHijra) q = q.eq("en_hijra", enHijra === "oui");
     if (acceptePolygamie && myProf?.gender === "homme") q = q.eq("accepte_polygamie", acceptePolygamie === "oui");
 
+    // Priorité aux profils premium, puis les plus récents
+    q = q.order("plan", { ascending: false }).order("created_at", { ascending: false });
+
     const { data: list } = await q;
     setProfiles(list ?? []);
 
@@ -63,8 +66,7 @@ function HomePage() {
   }
 
   useEffect(() => {
-  let unreadChannel: any;
-  (async () => {
+    (async () => {
       const { data: auth } = await supabase.auth.getUser();
       if (!auth.user) return;
       const { data: myProf } = await supabase.from("profiles").select("*").eq("id", auth.user.id).maybeSingle();
@@ -80,25 +82,9 @@ function HomePage() {
         .eq("receiver_id", auth.user.id)
         .eq("status", "pending");
       setPendingCount(count ?? 0);
-      const { data: myConvs } = await supabase
-  .from("conversations")
-  .select("id")
-  .or(`user_a.eq.${auth.user.id},user_b.eq.${auth.user.id}`);
-const convIds = (myConvs ?? []).map((c: any) => c.id);
-if (convIds.length) {
-  const { count: unread } = await supabase
-    .from("messages")
-    .select("id", { count: "exact", head: true })
-    .in("conversation_id", convIds)
-    .neq("sender_id", auth.user.id)
-    .is("read_at", null);
-  setUnreadCount(unread ?? 0);
-}
-// Rafraîchir le badge en temps réel
-const unreadChannel = supabase
-  .channel("unread-badge")
-  .on("postgres_changes", { event: "*", schema: "public", table: "messages" },
-    async () => {
+
+      let unreadChannel: any;
+
       const { data: myConvs } = await supabase
         .from("conversations")
         .select("id")
@@ -112,18 +98,39 @@ const unreadChannel = supabase
           .neq("sender_id", auth.user.id)
           .is("read_at", null);
         setUnreadCount(unread ?? 0);
-      } else {
-        setUnreadCount(0);
       }
-    }
-  )
-  .subscribe();
 
-   if (myProf) await loadProfiles(myProf);
+      // Rafraîchir le badge en temps réel
+      unreadChannel = supabase
+        .channel("unread-badge")
+        .on("postgres_changes", { event: "*", schema: "public", table: "messages" },
+          async () => {
+            const { data: myConvs2 } = await supabase
+              .from("conversations")
+              .select("id")
+              .or(`user_a.eq.${auth.user.id},user_b.eq.${auth.user.id}`);
+            const convIds2 = (myConvs2 ?? []).map((c: any) => c.id);
+            if (convIds2.length) {
+              const { count: unread2 } = await supabase
+                .from("messages")
+                .select("id", { count: "exact", head: true })
+                .in("conversation_id", convIds2)
+                .neq("sender_id", auth.user.id)
+                .is("read_at", null);
+              setUnreadCount(unread2 ?? 0);
+            } else {
+              setUnreadCount(0);
+            }
+          }
+        )
+        .subscribe();
+
+      if (myProf) await loadProfiles(myProf);
+
+      return () => {
+        supabase.removeChannel(unreadChannel);
+      };
     })();
-    return () => {
-      supabase.removeChannel(unreadChannel);
-    };
   }, []);
 
   useEffect(() => {
@@ -133,7 +140,6 @@ const unreadChannel = supabase
   async function logout() {
     await supabase.auth.signOut();
     navigate({ to: "/connexion" });
-    
   }
 
   return (
@@ -249,11 +255,21 @@ const unreadChannel = supabase
           {profiles.map((p) => (
             <Link key={p.id} to="/profil/$id" params={{ id: p.id }}
               className="overflow-hidden rounded-xl border border-border bg-card">
-              {photoUrls[p.id] ? (
-                <img src={photoUrls[p.id]} alt="" className="aspect-square w-full object-cover" />
-              ) : <div className="aspect-square w-full bg-muted" />}
+              <div className="relative">
+                {photoUrls[p.id] ? (
+                  <img src={photoUrls[p.id]} alt="" className="aspect-square w-full object-cover" />
+                ) : <div className="aspect-square w-full bg-muted" />}
+                {p.plan === "premium" && (
+                  <span className="absolute right-1.5 top-1.5 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                    Premium
+                  </span>
+                )}
+              </div>
               <div className="p-2">
-                <p className="text-sm font-medium">{p.first_name}, {p.age}</p>
+                <div className="flex items-center gap-1">
+                  <p className="text-sm font-medium">{p.first_name}, {p.age}</p>
+                  {p.verified && <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-blue-500" />}
+                </div>
                 <p className="text-xs text-muted-foreground">{p.city} · {islandLabel(p.island)}</p>
                 {p.statut_matrimonial && <p className="text-xs text-muted-foreground">{p.statut_matrimonial}</p>}
               </div>

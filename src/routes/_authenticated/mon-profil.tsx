@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, Trash2, Settings } from "lucide-react";
+import { ArrowLeft, Trash2, Settings, Eye, Lock } from "lucide-react";
 import { islandLabel } from "@/lib/islands";
 
 type WaliProfile = {
@@ -36,6 +36,10 @@ function MonProfil() {
   const [waliId, setWaliId] = useState<string | null>(null);
   const [savingWali, setSavingWali] = useState(false);
 
+  // Vues de profil
+  const [viewsCount, setViewsCount] = useState(0);
+  const [viewers, setViewers] = useState<any[]>([]);
+
   useEffect(() => {
     (async () => {
       const { data: auth } = await supabase.auth.getUser();
@@ -51,10 +55,10 @@ function MonProfil() {
       // Charger wali si femme
       if (data?.gender === "femme") {
         const { data: wali } = await supabase
-  .from("wali")
-  .select("*")
-  .eq("user_id", auth.user.id)
-  .maybeSingle();
+          .from("wali")
+          .select("*")
+          .eq("user_id", auth.user.id)
+          .maybeSingle();
         if (wali) {
           setWaliId(wali.user_id);
           setWaliNom(wali.full_name ?? "");
@@ -62,6 +66,39 @@ function MonProfil() {
           setWaliTel(wali.phone ?? "");
           setWaliEmail(wali.email ?? "");
           setWaliNotes(wali.notes ?? "");
+        }
+      }
+
+      // Charger les vues de profil
+      const { count } = await (supabase as any)
+        .from("profile_views")
+        .select("id", { count: "exact", head: true })
+        .eq("viewed_id", auth.user.id);
+      setViewsCount(count ?? 0);
+
+      if (data?.plan === "premium" || data?.plan === "vip") {
+        const { data: viewsData } = await (supabase as any)
+          .from("profile_views")
+          .select("viewer_id, created_at")
+          .eq("viewed_id", auth.user.id)
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        if (viewsData?.length) {
+          const viewerIds = [...new Set(viewsData.map((v: any) => v.viewer_id))] as string[];
+          const { data: profs } = await supabase
+            .from("profiles")
+            .select("id, first_name, age, city, photo_url")
+            .in("id", viewerIds);
+
+          const profMap: Record<string, any> = {};
+          for (const prof of profs ?? []) profMap[prof.id] = prof;
+
+          const enriched = viewsData.map((v: any) => ({
+            ...v,
+            profile: profMap[v.viewer_id],
+          }));
+          setViewers(enriched);
         }
       }
     })();
@@ -76,43 +113,35 @@ function MonProfil() {
   async function saveWali() {
     setSavingWali(true);
     const payload = {
-  user_id: p.id,
-  full_name: waliNom,
-  relation: waliRelation as "pere" | "frere" | "oncle" | "tuteur" | "autre",
-  phone: waliTel,
-  email: waliEmail,
-  notes: waliNotes,
-};
+      user_id: p.id,
+      full_name: waliNom,
+      relation: waliRelation as "pere" | "frere" | "oncle" | "tuteur" | "autre",
+      phone: waliTel,
+      email: waliEmail,
+      notes: waliNotes,
+    };
 
-if (waliId) {
-  await supabase
-    .from("wali")
-    .update(payload)
-    .eq("user_id", waliId);
-} else {
-  const { data } = await supabase
-    .from("wali")
-    .insert(payload)
-    .select("user_id")
-    .single();
-
-  if (data) setWaliId(data.user_id);
-}
+    if (waliId) {
+      await supabase.from("wali").update(payload).eq("user_id", waliId);
+    } else {
+      const { data } = await supabase.from("wali").insert(payload).select("user_id").single();
+      if (data) setWaliId(data.user_id);
+    }
 
     setSavingWali(false);
   }
 
   async function deleteAccount() {
     setDeleting(true);
-    // Supprimer le profil (cascade)
     await supabase.from("profiles").delete().eq("id", p.id);
-    // Supprimer le compte auth
     await supabase.auth.admin?.deleteUser(p.id).catch(() => {});
     await supabase.auth.signOut();
     navigate({ to: "/connexion" });
   }
 
   if (!p) return <div className="grid min-h-dvh place-items-center">Chargement…</div>;
+
+  const isPremium = p.plan === "premium" || p.plan === "vip";
 
   return (
     <div className="min-h-dvh bg-background">
@@ -144,6 +173,54 @@ if (waliId) {
             Ton profil est en cours de vérification. Il sera visible sous 24h.
           </div>
         )}
+
+        {/* Vues de profil */}
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Eye className="h-4 w-4 text-muted-foreground" />
+            <h2 className="font-serif text-lg">
+              {viewsCount} vue{viewsCount !== 1 ? "s" : ""} de profil
+            </h2>
+          </div>
+
+          {isPremium ? (
+            viewers.length > 0 ? (
+              <div className="space-y-2">
+                {viewers.map((v) => (
+                  <Link
+                    key={v.viewer_id + v.created_at}
+                    to="/profil/$id"
+                    params={{ id: v.viewer_id }}
+                    className="flex items-center gap-3 rounded-lg border border-border p-2 hover:bg-muted"
+                  >
+                    <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full bg-muted">
+                      {v.profile?.photo_url ? (
+                        <img src={v.profile.photo_url} alt="" className="h-full w-full object-cover" />
+                      ) : null}
+                    </div>
+                    <div className="flex-1 text-sm">
+                      <p className="font-medium">{v.profile?.first_name ?? "Profil"}{v.profile?.age ? `, ${v.profile.age}` : ""}</p>
+                      <p className="text-xs text-muted-foreground">{v.profile?.city}</p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Personne n'a encore consulté ton profil.</p>
+            )
+          ) : (
+            <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
+              <Lock className="h-3.5 w-3.5 shrink-0" />
+              <p>
+                Passe en{" "}
+                <Link to="/parametres" className="font-medium text-foreground underline underline-offset-2">
+                  Premium
+                </Link>{" "}
+                pour voir qui a consulté ton profil.
+              </p>
+            </div>
+          )}
+        </div>
 
         {/* Bio */}
         <div>

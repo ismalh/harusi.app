@@ -1,7 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, Send } from "lucide-react";
+import { ArrowLeft, Send, Lock } from "lucide-react";
+
+const DAILY_LIMIT = 10;
 
 export const Route = createFileRoute("/_authenticated/chat/$id")({
   component: ChatPage,
@@ -15,9 +17,18 @@ function ChatPage() {
   const [text, setText] = useState("");
   const [other, setOther] = useState<any>(null);
   const [myGender, setMyGender] = useState<string | null>(null);
+  const [myPlan, setMyPlan] = useState<string>("free");
+  const [messagesSentToday, setMessagesSentToday] = useState(0);
   const [waliLink, setWaliLink] = useState<string | null>(null);
   const [generatingLink, setGeneratingLink] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const limitReached = myPlan === "free" && messagesSentToday >= DAILY_LIMIT;
+
+  async function refreshDailyCount(userId: string) {
+    const { data } = await (supabase as any).rpc("count_messages_today", { _user_id: userId });
+    setMessagesSentToday(data ?? 0);
+  }
 
   useEffect(() => {
     let channel: any;
@@ -27,13 +38,16 @@ function ChatPage() {
       if (!auth.user) return;
       setMe(auth.user.id);
 
-      // Gender du user connecté
+      // Profil du user connecté
       const { data: myProf } = await supabase
         .from("profiles")
-        .select("gender")
+        .select("gender, plan")
         .eq("id", auth.user.id)
         .maybeSingle();
       setMyGender(myProf?.gender ?? null);
+      setMyPlan(myProf?.plan ?? "free");
+
+      await refreshDailyCount(auth.user.id);
 
       const { data: conv } = await supabase
         .from("conversations")
@@ -57,11 +71,11 @@ function ChatPage() {
         .order("created_at");
       setMessages(data ?? []);
       await supabase
-  .from("messages")
-  .update({ read_at: new Date().toISOString() })
-  .eq("conversation_id", id)
-  .neq("sender_id", auth.user.id)
-  .is("read_at", null);
+        .from("messages")
+        .update({ read_at: new Date().toISOString() })
+        .eq("conversation_id", id)
+        .neq("sender_id", auth.user.id)
+        .is("read_at", null);
 
       // Vérifier si token wali existe déjà pour cette conv
       const { data: existingToken } = await supabase
@@ -87,19 +101,19 @@ function ChatPage() {
         )
         .subscribe();
       poll = setInterval(async () => {
-  const { data } = await supabase
-    .from("messages")
-    .select("*")
-    .eq("conversation_id", id)
-    .order("created_at");
-  setMessages(data ?? []);
-  await supabase
-    .from("messages")
-    .update({ read_at: new Date().toISOString() })
-    .eq("conversation_id", id)
-    .neq("sender_id", auth.user.id)
-    .is("read_at", null);
-}, 2000);
+        const { data } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("conversation_id", id)
+          .order("created_at");
+        setMessages(data ?? []);
+        await supabase
+          .from("messages")
+          .update({ read_at: new Date().toISOString() })
+          .eq("conversation_id", id)
+          .neq("sender_id", auth.user.id)
+          .is("read_at", null);
+      }, 2000);
     })();
     return () => {
       if (channel) supabase.removeChannel(channel);
@@ -114,6 +128,7 @@ function ChatPage() {
   async function send(e: React.FormEvent) {
     e.preventDefault();
     if (!text.trim() || !me) return;
+    if (limitReached) return;
     const content = text.trim().slice(0, 2000);
     setText("");
     await supabase
@@ -123,6 +138,7 @@ function ChatPage() {
       .from("conversations")
       .update({ updated_at: new Date().toISOString() })
       .eq("id", id);
+    await refreshDailyCount(me);
   }
 
   async function generateWaliLink() {
@@ -204,6 +220,25 @@ function ChatPage() {
         </div>
       )}
 
+      {/* Limite gratuite atteinte */}
+      {limitReached && (
+        <div className="border-t border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="mx-auto flex max-w-2xl items-center gap-2 text-sm text-amber-800">
+            <Lock className="h-4 w-4 shrink-0" />
+            <p>
+              Tu as atteint la limite de {DAILY_LIMIT} messages gratuits aujourd'hui.{" "}
+              <button
+                onClick={() => navigate({ to: "/parametres" })}
+                className="font-medium underline underline-offset-2"
+              >
+                Passer en Premium
+              </button>{" "}
+              pour des messages illimités.
+            </p>
+          </div>
+        </div>
+      )}
+
       <form
         onSubmit={send}
         className="sticky bottom-0 border-t border-border bg-background p-2"
@@ -212,17 +247,24 @@ function ChatPage() {
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Message…"
+            placeholder={limitReached ? "Limite atteinte…" : "Message…"}
             maxLength={2000}
-            className="flex-1 rounded-full border border-border bg-card px-4 py-2 text-sm outline-none"
+            disabled={limitReached}
+            className="flex-1 rounded-full border border-border bg-card px-4 py-2 text-sm outline-none disabled:opacity-50"
           />
           <button
             type="submit"
-            className="rounded-full bg-primary p-2 text-primary-foreground"
+            disabled={limitReached}
+            className="rounded-full bg-primary p-2 text-primary-foreground disabled:opacity-50"
           >
             <Send className="h-4 w-4" />
           </button>
         </div>
+        {myPlan === "free" && !limitReached && (
+          <p className="mx-auto mt-1.5 max-w-2xl px-2 text-center text-xs text-muted-foreground">
+            {messagesSentToday}/{DAILY_LIMIT} messages aujourd'hui
+          </p>
+        )}
       </form>
     </div>
   );
