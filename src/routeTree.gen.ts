@@ -29,7 +29,6 @@ import { Route as AuthenticatedChatIdRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
 import { Route as AuthenticatedAdminReportsRouteImport } from './routes/_authenticated/admin.reports'
 import { Route as AuthenticatedAdminConversationsRouteImport } from './routes/_authenticated/admin.conversations'
-import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as AuthenticatedAdminUsersIdRouteImport } from './routes/_authenticated/admin.users.$id'
 import { Route as AuthenticatedAdminConversationsIdRouteImport } from './routes/_authenticated/admin.conversations.$id'
 
@@ -135,12 +134,6 @@ const AuthenticatedAdminConversationsRoute =
     path: '/conversations',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
-const LovableEmailQueueProcessRoute =
-  LovableEmailQueueProcessRouteImport.update({
-    id: '/lovable/email/queue/process',
-    path: '/lovable/email/queue/process',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const AuthenticatedAdminUsersIdRoute =
   AuthenticatedAdminUsersIdRouteImport.update({
     id: '/$id',
@@ -176,7 +169,6 @@ export interface FileRoutesByFullPath {
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/admin/conversations/$id': typeof AuthenticatedAdminConversationsIdRoute
   '/admin/users/$id': typeof AuthenticatedAdminUsersIdRoute
-  '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -199,7 +191,6 @@ export interface FileRoutesByTo {
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/admin/conversations/$id': typeof AuthenticatedAdminConversationsIdRoute
   '/admin/users/$id': typeof AuthenticatedAdminUsersIdRoute
-  '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -225,7 +216,6 @@ export interface FileRoutesById {
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/admin/conversations/$id': typeof AuthenticatedAdminConversationsIdRoute
   '/_authenticated/admin/users/$id': typeof AuthenticatedAdminUsersIdRoute
-  '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -251,7 +241,6 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/admin/conversations/$id'
     | '/admin/users/$id'
-    | '/lovable/email/queue/process'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -274,7 +263,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/admin/conversations/$id'
     | '/admin/users/$id'
-    | '/lovable/email/queue/process'
   id:
     | '__root__'
     | '/'
@@ -299,7 +287,6 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/'
     | '/_authenticated/admin/conversations/$id'
     | '/_authenticated/admin/users/$id'
-    | '/lovable/email/queue/process'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -310,7 +297,6 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   ReglesRoute: typeof ReglesRoute
   WaliTokenRoute: typeof WaliTokenRoute
-  LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -455,13 +441,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminConversationsRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/lovable/email/queue/process': {
-      id: '/lovable/email/queue/process'
-      path: '/lovable/email/queue/process'
-      fullPath: '/lovable/email/queue/process'
-      preLoaderRoute: typeof LovableEmailQueueProcessRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_authenticated/admin/users/$id': {
       id: '/_authenticated/admin/users/$id'
       path: '/$id'
@@ -561,7 +540,6 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   ReglesRoute: ReglesRoute,
   WaliTokenRoute: WaliTokenRoute,
-  LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
