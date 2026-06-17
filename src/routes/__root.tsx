@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { InstallPwaPrompt } from "../components/InstallPwaPrompt";
 import {
   Outlet,
   Link,
@@ -141,6 +142,8 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
+      <InstallPwaPrompt />
     </QueryClientProvider>
   );
 }
+      
