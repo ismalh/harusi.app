@@ -31,3 +31,5 @@ dist-ssr
 *.sln
 *.sw?
 supabase/migrations/ALL_MIGRATIONS.sql
+.vercel
+.env*
