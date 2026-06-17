@@ -43,12 +43,13 @@ export default {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);
-    } catch (error) {
-      console.error(error);
-      return new Response(renderErrorPage(), {
+   } catch (error) {
+      console.error("REAL ERROR:", error);
+      return new Response(JSON.stringify({ error: String(error), stack: (error as Error)?.stack }), {
         status: 500,
-        headers: { "content-type": "text/html; charset=utf-8" },
+        headers: { "content-type": "application/json" },
       });
     }
   },
 };
+    
