@@ -38,7 +38,6 @@ function ChatPage() {
       if (!auth.user) return;
       setMe(auth.user.id);
 
-      // Profil du user connecté
       const { data: myProf } = await supabase
         .from("profiles")
         .select("gender, plan")
@@ -64,12 +63,13 @@ function ChatPage() {
         .maybeSingle();
       setOther(prof);
 
-      const { data } = await supabase
+      const { data: msgs } = await supabase
         .from("messages")
         .select("*")
         .eq("conversation_id", id)
         .order("created_at");
-      setMessages(data ?? []);
+      setMessages(msgs ?? []);
+
       await supabase
         .from("messages")
         .update({ read_at: new Date().toISOString() })
@@ -77,13 +77,13 @@ function ChatPage() {
         .neq("sender_id", auth.user.id)
         .is("read_at", null);
 
-      // Vérifier si un token wali GLOBAL existe déjà pour cette utilisatrice (femme uniquement)
+      // Vérifier si un token wali existe déjà pour CETTE conv
       if (myProf?.gender === "femme") {
         const { data: existingToken } = await (supabase as any)
           .from("wali_tokens")
           .select("token")
           .eq("wali_user_id", auth.user.id)
-          .is("conversation_id", null)
+          .eq("conversation_id", id)
           .maybeSingle();
         if (existingToken) {
           setWaliLink(`${window.location.origin}/wali/${existingToken.token}`);
@@ -94,15 +94,11 @@ function ChatPage() {
         .channel(`msg-${id}`)
         .on(
           "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "messages",
-            filter: `conversation_id=eq.${id}`,
-          },
+          { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${id}` },
           (payload) => setMessages((m) => [...m, payload.new])
         )
         .subscribe();
+
       poll = setInterval(async () => {
         const { data } = await supabase
           .from("messages")
@@ -130,8 +126,7 @@ function ChatPage() {
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
-    if (!text.trim() || !me) return;
-    if (limitReached) return;
+    if (!text.trim() || !me || limitReached) return;
     const content = text.trim().slice(0, 2000);
     setText("");
     await supabase
@@ -147,15 +142,14 @@ function ChatPage() {
   async function generateWaliLink() {
     if (!me) return;
     setGeneratingLink(true);
-    // Token GLOBAL : pas lié à une conversation_id précise
+    // Token lié à CETTE conversation uniquement
     const { data } = await (supabase as any)
       .from("wali_tokens")
-      .insert({ wali_user_id: me, conversation_id: null })
+      .insert({ wali_user_id: me, conversation_id: id })
       .select("token")
       .single();
     if (data) {
-      const link = `${window.location.origin}/wali/${data.token}`;
-      setWaliLink(link);
+      setWaliLink(`${window.location.origin}/wali/${data.token}`);
     }
     setGeneratingLink(false);
   }
@@ -163,10 +157,7 @@ function ChatPage() {
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <header className="sticky top-0 z-10 border-b border-border bg-background/95 px-4 py-3 flex items-center gap-2">
-        <button
-          onClick={() => navigate({ to: "/conversations" })}
-          className="rounded-md p-1 hover:bg-muted"
-        >
+        <button onClick={() => navigate({ to: "/conversations" })} className="rounded-md p-1 hover:bg-muted">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <h1 className="font-serif text-lg">{other?.first_name ?? "Conversation"}</h1>
@@ -175,17 +166,12 @@ function ChatPage() {
       <main className="flex-1 overflow-y-auto px-4 py-3">
         <div className="mx-auto max-w-2xl space-y-2">
           {messages.map((m) => (
-            <div
-              key={m.id}
-              className={`flex ${m.sender_id === me ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                  m.sender_id === me
-                 ? "bg-amber-800 text-amber-50 dark:bg-amber-900 dark:text-amber-50"
-                    : "bg-card border border-border text-foreground"
-                }`}
-              >
+            <div key={m.id} className={`flex ${m.sender_id === me ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                m.sender_id === me
+                  ? "bg-amber-800 text-amber-50 dark:bg-amber-900 dark:text-amber-50"
+                  : "bg-card border border-border text-foreground"
+              }`}>
                 {m.body}
               </div>
             </div>
@@ -194,7 +180,7 @@ function ChatPage() {
         </div>
       </main>
 
-      {/* Lien wali GLOBAL — femmes uniquement */}
+      {/* Lien wali — femmes uniquement */}
       {myGender === "femme" && (
         <div className="border-t border-border bg-background px-4 py-2">
           <div className="mx-auto max-w-2xl">
@@ -225,17 +211,13 @@ function ChatPage() {
         </div>
       )}
 
-      {/* Limite gratuite atteinte */}
       {limitReached && (
         <div className="border-t border-amber-200 bg-amber-50 px-4 py-3">
           <div className="mx-auto flex max-w-2xl items-center gap-2 text-sm text-amber-800">
             <Lock className="h-4 w-4 shrink-0" />
             <p>
               Tu as atteint la limite de {DAILY_LIMIT} messages gratuits aujourd'hui.{" "}
-              <button
-                onClick={() => navigate({ to: "/parametres" })}
-                className="font-medium underline underline-offset-2"
-              >
+              <button onClick={() => navigate({ to: "/parametres" })} className="font-medium underline underline-offset-2">
                 Passer en Premium
               </button>{" "}
               pour des messages illimités.
@@ -244,10 +226,7 @@ function ChatPage() {
         </div>
       )}
 
-      <form
-        onSubmit={send}
-        className="sticky bottom-0 border-t border-border bg-background p-2"
-      >
+      <form onSubmit={send} className="sticky bottom-0 border-t border-border bg-background p-2">
         <div className="mx-auto flex max-w-2xl gap-2">
           <input
             value={text}
@@ -257,11 +236,7 @@ function ChatPage() {
             disabled={limitReached}
             className="flex-1 rounded-full border border-border bg-card px-4 py-2 text-sm outline-none disabled:opacity-50"
           />
-          <button
-            type="submit"
-            disabled={limitReached}
-            className="rounded-full bg-primary p-2 text-primary-foreground disabled:opacity-50"
-          >
+          <button type="submit" disabled={limitReached} className="rounded-full bg-primary p-2 text-primary-foreground disabled:opacity-50">
             <Send className="h-4 w-4" />
           </button>
         </div>

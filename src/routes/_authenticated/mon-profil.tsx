@@ -4,16 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { ArrowLeft, Trash2, Settings, Eye, Lock } from "lucide-react";
 import { islandLabel } from "@/lib/islands";
 
-type WaliProfile = {
-  id: string;
-  user_id: string;
-  full_name: string | null;
-  relation: string | null;
-  phone: string | null;
-  email: string | null;
-  notes: string | null;
-};
-
 export const Route = createFileRoute("/_authenticated/mon-profil")({
   component: MonProfil,
 });
@@ -26,17 +16,6 @@ function MonProfil() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
-
-  // Wali
-  const [waliNom, setWaliNom] = useState("");
-  const [waliRelation, setWaliRelation] = useState("");
-  const [waliTel, setWaliTel] = useState("");
-  const [waliEmail, setWaliEmail] = useState("");
-  const [waliNotes, setWaliNotes] = useState("");
-  const [waliId, setWaliId] = useState<string | null>(null);
-  const [savingWali, setSavingWali] = useState(false);
-
-  // Vues de profil
   const [viewsCount, setViewsCount] = useState(0);
   const [viewers, setViewers] = useState<any[]>([]);
 
@@ -52,24 +31,6 @@ function MonProfil() {
         setPhoto(s?.signedUrl ?? null);
       }
 
-      // Charger wali si femme
-      if (data?.gender === "femme") {
-        const { data: wali } = await supabase
-          .from("wali")
-          .select("*")
-          .eq("user_id", auth.user.id)
-          .maybeSingle();
-        if (wali) {
-          setWaliId(wali.user_id);
-          setWaliNom(wali.full_name ?? "");
-          setWaliRelation(wali.relation ?? "");
-          setWaliTel(wali.phone ?? "");
-          setWaliEmail(wali.email ?? "");
-          setWaliNotes(wali.notes ?? "");
-        }
-      }
-
-      // Charger les vues de profil
       const { count } = await (supabase as any)
         .from("profile_views")
         .select("id", { count: "exact", head: true })
@@ -110,27 +71,6 @@ function MonProfil() {
     setSaving(false);
   }
 
-  async function saveWali() {
-    setSavingWali(true);
-    const payload = {
-      user_id: p.id,
-      full_name: waliNom,
-      relation: waliRelation as "pere" | "frere" | "oncle" | "tuteur" | "autre",
-      phone: waliTel,
-      email: waliEmail,
-      notes: waliNotes,
-    };
-
-    if (waliId) {
-      await supabase.from("wali").update(payload).eq("user_id", waliId);
-    } else {
-      const { data } = await supabase.from("wali").insert(payload).select("user_id").single();
-      if (data) setWaliId(data.user_id);
-    }
-
-    setSavingWali(false);
-  }
-
   async function deleteAccount() {
     setDeleting(true);
     await supabase.from("profiles").delete().eq("id", p.id);
@@ -167,14 +107,12 @@ function MonProfil() {
         {p.statut_matrimonial && <p className="text-sm text-muted-foreground">Statut : {p.statut_matrimonial}</p>}
         {p.profession && <p className="text-sm text-muted-foreground">Profession : {p.profession}</p>}
 
-        {/* Statut modération */}
         {p.status === "pending" && (
           <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
             Ton profil est en cours de vérification. Il sera visible sous 24h.
           </div>
         )}
 
-        {/* Vues de profil */}
         <div className="rounded-xl border border-border bg-card p-4 space-y-3">
           <div className="flex items-center gap-2">
             <Eye className="h-4 w-4 text-muted-foreground" />
@@ -182,7 +120,6 @@ function MonProfil() {
               {viewsCount} vue{viewsCount !== 1 ? "s" : ""} de profil
             </h2>
           </div>
-
           {isPremium ? (
             viewers.length > 0 ? (
               <div className="space-y-2">
@@ -222,7 +159,6 @@ function MonProfil() {
           )}
         </div>
 
-        {/* Bio */}
         <div>
           <label className="mb-1 block text-sm font-medium">Bio</label>
           <textarea rows={4} value={bio} maxLength={1000}
@@ -234,53 +170,6 @@ function MonProfil() {
           </button>
         </div>
 
-        {/* Section Wali (femmes uniquement) */}
-        {p.gender === "femme" && (
-          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-            <h2 className="font-serif text-lg">Mon wali</h2>
-            <p className="text-xs text-muted-foreground">
-              Ton wali pourra suivre tes conversations via un lien sécurisé.
-            </p>
-            <div>
-              <label className="mb-1 block text-xs font-medium">Nom complet *</label>
-              <input value={waliNom} onChange={(e) => setWaliNom(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium">Relation *</label>
-              <select value={waliRelation} onChange={(e) => setWaliRelation(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">
-                <option value="">Sélectionner…</option>
-                <option value="père">Père</option>
-                <option value="frère">Frère</option>
-                <option value="oncle">Oncle</option>
-                <option value="tuteur">Tuteur</option>
-                <option value="autre">Autre</option>
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium">Téléphone</label>
-              <input value={waliTel} onChange={(e) => setWaliTel(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium">Email</label>
-              <input type="email" value={waliEmail} onChange={(e) => setWaliEmail(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium">Notes (facultatif)</label>
-              <textarea rows={2} value={waliNotes} onChange={(e) => setWaliNotes(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-            </div>
-            <button onClick={saveWali} disabled={savingWali || !waliNom || !waliRelation}
-              className="w-full rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-50">
-              {savingWali ? "Enregistrement…" : "Enregistrer le wali"}
-            </button>
-          </div>
-        )}
-
-        {/* Suppression de compte */}
         <div className="pt-4 border-t border-border">
           {!showConfirmDelete ? (
             <button
