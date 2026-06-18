@@ -17,12 +17,11 @@ function WaliConversationPage() {
 
   useEffect(() => {
     (async () => {
-      // Vérifier que le token global est valide
+      // Vérifier le token (sans filtrer sur conversation_id)
       const { data: tokenRow } = await (supabase as any)
         .from("wali_tokens")
         .select("expires_at, wali_user_id")
         .eq("token", token)
-        .is("conversation_id", null)
         .maybeSingle();
 
       if (!tokenRow) {
@@ -36,19 +35,24 @@ function WaliConversationPage() {
         return;
       }
 
-      // Vérifier que la conversation appartient bien à l'utilisatrice du token
+      // Vérifier que la conv appartient bien à l'utilisatrice du wali
       const { data: conv } = await supabase
         .from("conversations")
         .select("id, user_a, user_b")
         .eq("id", convId)
         .maybeSingle();
 
-      if (!conv || (conv.user_a !== tokenRow.wali_user_id && conv.user_b !== tokenRow.wali_user_id)) {
+      if (
+        !conv ||
+        (conv.user_a !== tokenRow.wali_user_id &&
+          conv.user_b !== tokenRow.wali_user_id)
+      ) {
         setError("Accès non autorisé à cette conversation.");
         setLoading(false);
         return;
       }
 
+      // Récupérer les messages
       const { data: msgs } = await supabase
         .from("messages")
         .select("*")
@@ -57,6 +61,7 @@ function WaliConversationPage() {
 
       setMessages(msgs ?? []);
 
+      // Récupérer les profils des expéditeurs
       const ids = [...new Set((msgs ?? []).map((m: any) => m.sender_id))] as string[];
       if (ids.length) {
         const { data: profs } = await supabase
@@ -111,7 +116,9 @@ function WaliConversationPage() {
                 );
               })}
               {messages.length === 0 && (
-                <p className="text-center text-sm text-muted-foreground">Aucun message pour l'instant.</p>
+                <p className="text-center text-sm text-muted-foreground">
+                  Aucun message pour l'instant.
+                </p>
               )}
             </div>
           </>
