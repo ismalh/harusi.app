@@ -55,10 +55,19 @@ function MonProfil() {
           const profMap: Record<string, any> = {};
           for (const prof of profs ?? []) profMap[prof.id] = prof;
 
-          const enriched = viewsData.map((v: any) => ({
-            ...v,
-            profile: profMap[v.viewer_id],
-          }));
+          const enriched = await Promise.all(
+            viewsData.map(async (v: any) => {
+              const prof = profMap[v.viewer_id];
+              let signedUrl = null;
+              if (prof?.photo_url) {
+                const { data: s } = await supabase.storage
+                  .from("profile-photos")
+                  .createSignedUrl(prof.photo_url, 3600);
+                signedUrl = s?.signedUrl ?? null;
+              }
+              return { ...v, profile: { ...prof, signedUrl } };
+            })
+          );
           setViewers(enriched);
         }
       }
@@ -131,8 +140,8 @@ function MonProfil() {
                     className="flex items-center gap-3 rounded-lg border border-border p-2 hover:bg-muted"
                   >
                     <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full bg-muted">
-                      {v.profile?.photo_url ? (
-                        <img src={v.profile.photo_url} alt="" className="h-full w-full object-cover" />
+                      {v.profile?.signedUrl ? (
+                        <img src={v.profile.signedUrl} alt="" className="h-full w-full object-cover" />
                       ) : null}
                     </div>
                     <div className="flex-1 text-sm">
