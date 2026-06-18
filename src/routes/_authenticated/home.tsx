@@ -147,26 +147,34 @@ function HomePage() {
       <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
           <HarusiLogo size="sm" />
-          <nav className="flex items-center gap-1 text-xs">
-            <Link to="/mon-profil" className="rounded-md p-2 hover:bg-muted"><User className="h-4 w-4" /></Link>
-           <Link to="/conversations" className="relative rounded-md p-2 hover:bg-muted">
-  <MessageCircle className="h-4 w-4" />
-  {unreadCount > 0 && (
-    <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-      {unreadCount}
-    </span>
-  )}
-</Link>
-            <Link to="/demandes" className="relative rounded-md p-2 hover:bg-muted">
-              <Bell className="h-4 w-4" />
+          <nav className="flex items-center gap-0.5 text-xs">
+            <Link to="/mon-profil" className="flex h-11 w-11 items-center justify-center rounded-md hover:bg-muted active:bg-muted">
+              <User className="h-5 w-5" />
+            </Link>
+            <Link to="/conversations" className="relative flex h-11 w-11 items-center justify-center rounded-md hover:bg-muted active:bg-muted">
+              <MessageCircle className="h-5 w-5" />
+              {unreadCount > 0 && (
+                <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                  {unreadCount}
+                </span>
+              )}
+            </Link>
+            <Link to="/demandes" className="relative flex h-11 w-11 items-center justify-center rounded-md hover:bg-muted active:bg-muted">
+              <Bell className="h-5 w-5" />
               {pendingCount > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
                   {pendingCount}
                 </span>
               )}
             </Link>
-            {isAdmin && <Link to="/admin" className="rounded-md p-2 hover:bg-muted"><Shield className="h-4 w-4" /></Link>}
-            <button onClick={logout} className="rounded-md p-2 hover:bg-muted"><LogOut className="h-4 w-4" /></button>
+            {isAdmin && (
+              <Link to="/admin" className="flex h-11 w-11 items-center justify-center rounded-md hover:bg-muted active:bg-muted">
+                <Shield className="h-5 w-5" />
+              </Link>
+            )}
+            <button onClick={logout} className="flex h-11 w-11 items-center justify-center rounded-md hover:bg-muted active:bg-muted">
+              <LogOut className="h-5 w-5" />
+            </button>
           </nav>
         </div>
       </header>

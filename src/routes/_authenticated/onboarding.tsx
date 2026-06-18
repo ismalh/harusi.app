@@ -3,13 +3,14 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { HarusiLogo } from "@/components/HarusiLogo";
 import { ISLANDS } from "@/lib/islands";
-import { ChevronRight, ChevronLeft, Info } from "lucide-react";
+import { ChevronRight, ChevronLeft, Info, X } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
   component: OnboardingPage,
 });
 
 const TOTAL_STEPS = 6;
+const MAX_PHOTOS = 6;
 
 const LANGUES_OPTIONS = ["Shikomori", "Français", "Arabe", "Anglais", "Autres"];
 
@@ -57,96 +58,15 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement> & { childre
   );
 }
 
-function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return (
-    <textarea
-      {...props}
-      className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30 resize-none"
-    />
-  );
-}
-
-function RadioGroup({
-  label,
-  name,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  name: string;
-  options: { label: string; value: string }[];
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <Field label={label}>
-      <div className="flex flex-wrap gap-2">
-        {options.map((o) => (
-          <button
-            key={o.value}
-            type="button"
-            onClick={() => onChange(o.value)}
-            className={`rounded-lg border px-4 py-2 text-sm transition-colors ${
-              value === o.value
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-card hover:bg-muted"
-            }`}
-          >
-            {o.label}
-          </button>
-        ))}
-      </div>
-    </Field>
-  );
-}
-
-function BoolField({
-  label,
-  value,
-  onChange,
-  tooltip,
-}: {
-  label: string;
-  value: boolean | null;
-  onChange: (v: boolean) => void;
-  tooltip?: string;
-}) {
-  return (
-    <Field label={label}>
-      {tooltip && (
-        <div className="mb-2 flex items-start gap-1.5 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
-          <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-          <span>{tooltip}</span>
-        </div>
-      )}
-      <div className="flex gap-2">
-        {[{ label: "Oui", value: true }, { label: "Non", value: false }].map((o) => (
-          <button
-            key={String(o.value)}
-            type="button"
-            onClick={() => onChange(o.value)}
-            className={`rounded-lg border px-5 py-2 text-sm transition-colors ${
-              value === o.value
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-card hover:bg-muted"
-            }`}
-          >
-            {o.label}
-          </button>
-        ))}
-      </div>
-    </Field>
-  );
-}
-
 export default function OnboardingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+
+  // Photos multiples : tableau de fichiers + previews
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
 
   // Step 1
   const [firstName, setFirstName] = useState("");
@@ -211,11 +131,24 @@ export default function OnboardingPage() {
     return Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
   }
 
+  function handlePhotosChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    const remainingSlots = MAX_PHOTOS - photoFiles.length;
+    const toAdd = files.slice(0, remainingSlots);
+    setPhotoFiles((prev) => [...prev, ...toAdd]);
+    setPhotoPreviews((prev) => [...prev, ...toAdd.map((f) => URL.createObjectURL(f))]);
+  }
+
+  function removePhoto(index: number) {
+    setPhotoFiles((prev) => prev.filter((_, i) => i !== index));
+    setPhotoPreviews((prev) => prev.filter((_, i) => i !== index));
+  }
+
   async function saveStep(nextStep: number) {
     setSaving(true);
     setError(null);
     try {
-      // Récupérer l'user directement pour éviter le problème de state async
       const { data: userData } = await supabase.auth.getUser();
       const uid = userData.user?.id;
       if (!uid) throw new Error("Utilisateur non connecté.");
@@ -291,17 +224,34 @@ export default function OnboardingPage() {
           accepte_polygamie: gender === "femme" ? acceptePolygamie : null,
         };
       } else if (step === 6) {
-        // Upload photo
-        let photoUrl: string | undefined;
-        if (photoFile) {
-          const ext = photoFile.name.split(".").pop();
-          const path = `${uid}/profile.${ext}`;
+        if (photoFiles.length === 0) {
+          setError("Merci d'ajouter au moins une photo.");
+          setSaving(false);
+          return;
+        }
+
+        // Upload de toutes les photos vers profile_photos + storage
+        let mainPhotoPath: string | undefined;
+        for (let i = 0; i < photoFiles.length; i++) {
+          const file = photoFiles[i];
+          const ext = file.name.split(".").pop();
+          const path = `${uid}/photo-${Date.now()}-${i}.${ext}`;
           const { error: upErr } = await supabase.storage
             .from("profile-photos")
-            .upload(path, photoFile, { upsert: true });
+            .upload(path, file, { upsert: true });
           if (upErr) throw upErr;
-          photoUrl = path;
+
+          if (i === 0) mainPhotoPath = path;
+
+          await (supabase as any).from("profile_photos").insert({
+            user_id: uid,
+            url: path,
+            is_main: i === 0,
+            position: i,
+            status: "pending",
+          });
         }
+
         patch = {
           ...patch,
           bio: bio || null,
@@ -310,19 +260,19 @@ export default function OnboardingPage() {
           onboarding_completed: true,
           onboarding_step: 6,
           status: "pending",
+          photo_url: mainPhotoPath,
         };
-        if (photoUrl) patch.photo_url = photoUrl;
       }
 
-    const { error: dbErr } = await supabase
-  .from("profiles")
-  .update(patch)
-  .eq("id", uid);
+      const { error: dbErr } = await supabase
+        .from("profiles")
+        .update(patch)
+        .eq("id", uid);
 
-if (dbErr) {
-  console.log("ERREUR SUPABASE:", dbErr);
-  throw dbErr;
-}
+      if (dbErr) {
+        console.log("ERREUR SUPABASE:", dbErr);
+        throw dbErr;
+      }
 
       if (step === 6) {
         navigate({ to: "/home" });
@@ -335,13 +285,6 @@ if (dbErr) {
     } finally {
       setSaving(false);
     }
-  }
-
-  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setPhotoFile(file);
-    setPhotoPreview(URL.createObjectURL(file));
   }
 
   return (
@@ -362,19 +305,17 @@ if (dbErr) {
               <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Ton prénom" />
             </Field>
 
-           <Field label="Genre *">
-  <select
-    value={gender}
-    onChange={(e) =>
-      setGender(e.target.value as "homme" | "femme")
-    }
-    className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-  >
-    <option value="">Sélectionner...</option>
-    <option value="homme">Homme</option>
-    <option value="femme">Femme</option>
-  </select>
-</Field>
+            <Field label="Genre *">
+              <select
+                value={gender}
+                onChange={(e) => setGender(e.target.value as "homme" | "femme")}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                <option value="">Sélectionner...</option>
+                <option value="homme">Homme</option>
+                <option value="femme">Femme</option>
+              </select>
+            </Field>
 
             <Field label="Date de naissance *">
               <Input type="date" value={dateNaissance} onChange={(e) => setDateNaissance(e.target.value)} max={new Date().toISOString().split("T")[0]} />
@@ -411,297 +352,302 @@ if (dbErr) {
               <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Paris, Marseille…" />
             </Field>
 
- <Field label="Langues parlées">
-  <div className="flex flex-wrap gap-2">
-    {LANGUES_OPTIONS.map((l) => {
-      const selected = langues.includes(l);
-
-      return (
-        <label
-          key={l}
-          className={`
-            cursor-pointer rounded-lg border px-3 py-1.5 text-sm transition-colors
-            ${
-              selected
-                ? "border-border bg-gray-200 text-foreground hover:bg-gray-300"
-                : "border-border bg-white text-foreground hover:bg-muted"
-            }
-          `}
-        >
-          <input
-            type="checkbox"
-            className="hidden"
-            checked={selected}
-            onChange={() => toggleLangue(l)}
-          />
-
-          {l}
-        </label>
-      );
-    })}
-  </div>
-</Field>
+            <Field label="Langues parlées">
+              <div className="flex flex-wrap gap-2">
+                {LANGUES_OPTIONS.map((l) => {
+                  const selected = langues.includes(l);
+                  return (
+                    <label
+                      key={l}
+                      className={`cursor-pointer rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                        selected
+                          ? "border-border bg-gray-200 text-foreground hover:bg-gray-300"
+                          : "border-border bg-white text-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <input type="checkbox" className="hidden" checked={selected} onChange={() => toggleLangue(l)} />
+                      {l}
+                    </label>
+                  );
+                })}
+              </div>
+            </Field>
           </div>
         )}
 
         {/* ── ÉTAPE 2 ── */}
-       {step === 2 && (
-  <div>
-    <h2 className="mb-4 font-serif text-xl">Situation personnelle</h2>
+        {step === 2 && (
+          <div>
+            <h2 className="mb-4 font-serif text-xl">Situation personnelle</h2>
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Statut matrimonial *</label>
-      <div className="flex gap-2">
-        <button type="button" onClick={() => setStatutMatrimonial("célibataire")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${statutMatrimonial === "célibataire" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Célibataire</button>
-        <button type="button" onClick={() => setStatutMatrimonial("divorcé")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${statutMatrimonial === "divorcé" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Divorcé(e)</button>
-        <button type="button" onClick={() => setStatutMatrimonial("veuf")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${statutMatrimonial === "veuf" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Veuf/Veuve</button>
-      </div>
-    </div>
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Statut matrimonial *</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setStatutMatrimonial("célibataire")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${statutMatrimonial === "célibataire" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Célibataire</button>
+                <button type="button" onClick={() => setStatutMatrimonial("divorcé")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${statutMatrimonial === "divorcé" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Divorcé(e)</button>
+                <button type="button" onClick={() => setStatutMatrimonial("veuf")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${statutMatrimonial === "veuf" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Veuf/Veuve</button>
+              </div>
+            </div>
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">As-tu des enfants ?</label>
-      <div className="flex gap-2">
-        <button type="button" onClick={() => setADesEnfants(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${aDesEnfants === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
-        <button type="button" onClick={() => setADesEnfants(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${aDesEnfants === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
-      </div>
-    </div>
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">As-tu des enfants ?</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setADesEnfants(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${aDesEnfants === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
+                <button type="button" onClick={() => setADesEnfants(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${aDesEnfants === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
+              </div>
+            </div>
 
-    {aDesEnfants && (
-      <div className="mb-4">
-        <label className="block mb-2 font-semibold">Nombre d'enfants</label>
-        <input type="number" min={1} value={nbEnfants} onChange={(e) => setNbEnfants(e.target.value)} className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-24 bg-white" />
-      </div>
-    )}
+            {aDesEnfants && (
+              <div className="mb-4">
+                <label className="block mb-2 font-semibold">Nombre d'enfants</label>
+                <input type="number" min={1} value={nbEnfants} onChange={(e) => setNbEnfants(e.target.value)} className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-24 bg-white" />
+              </div>
+            )}
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Acceptes-tu les enfants de l'autre ?</label>
-      <div className="flex gap-2">
-        <button type="button" onClick={() => setAccepteEnfants(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${accepteEnfants === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
-        <button type="button" onClick={() => setAccepteEnfants(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${accepteEnfants === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
-      </div>
-    </div>
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Acceptes-tu les enfants de l'autre ?</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setAccepteEnfants(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${accepteEnfants === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
+                <button type="button" onClick={() => setAccepteEnfants(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${accepteEnfants === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
+              </div>
+            </div>
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Nombre d'enfants souhaités</label>
-      <input type="number" min={0} value={nbEnfantsSouhaites} onChange={(e) => setNbEnfantsSouhaites(e.target.value)} placeholder="0" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-24 bg-white" />
-    </div>
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Nombre d'enfants souhaités</label>
+              <input type="number" min={0} value={nbEnfantsSouhaites} onChange={(e) => setNbEnfantsSouhaites(e.target.value)} placeholder="0" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-24 bg-white" />
+            </div>
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Profession *</label>
-      <input value={profession} onChange={(e) => setProfession(e.target.value)} placeholder="Infirmière, Ingénieur…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white" />
-    </div>
-
-  </div>
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Profession *</label>
+              <input value={profession} onChange={(e) => setProfession(e.target.value)} placeholder="Infirmière, Ingénieur…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white" />
+            </div>
+          </div>
         )}
 
         {step === 3 && (
-  <div>
-    <h2 className="mb-4 font-serif text-xl">Physique & Apparence</h2>
+          <div>
+            <h2 className="mb-4 font-serif text-xl">Physique & Apparence</h2>
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Taille</label>
-      <div className="flex gap-2">
-        <button type="button" onClick={() => setTaille("petit")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${taille === "petit" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Petit(e)</button>
-        <button type="button" onClick={() => setTaille("moyen")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${taille === "moyen" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Moyen(ne)</button>
-        <button type="button" onClick={() => setTaille("grand")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${taille === "grand" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Grand(e)</button>
-      </div>
-    </div>
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Taille</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setTaille("petit")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${taille === "petit" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Petit(e)</button>
+                <button type="button" onClick={() => setTaille("moyen")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${taille === "moyen" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Moyen(ne)</button>
+                <button type="button" onClick={() => setTaille("grand")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${taille === "grand" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Grand(e)</button>
+              </div>
+            </div>
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Corpulence</label>
-      <div className="flex gap-2 flex-wrap">
-        <button type="button" onClick={() => setCorpulence("mince")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${corpulence === "mince" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Mince</button>
-        <button type="button" onClick={() => setCorpulence("normale")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${corpulence === "normale" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Normale</button>
-        <button type="button" onClick={() => setCorpulence("sportive")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${corpulence === "sportive" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Sportive</button>
-        <button type="button" onClick={() => setCorpulence("en surpoids")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${corpulence === "en surpoids" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>En surpoids</button>
-      </div>
-    </div>
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Corpulence</label>
+              <div className="flex gap-2 flex-wrap">
+                <button type="button" onClick={() => setCorpulence("mince")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${corpulence === "mince" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Mince</button>
+                <button type="button" onClick={() => setCorpulence("normale")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${corpulence === "normale" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Normale</button>
+                <button type="button" onClick={() => setCorpulence("sportive")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${corpulence === "sportive" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Sportive</button>
+                <button type="button" onClick={() => setCorpulence("en surpoids")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${corpulence === "en surpoids" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>En surpoids</button>
+              </div>
+            </div>
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Tenue vestimentaire habituelle</label>
-      <input value={tenueVestimentaire} onChange={(e) => setTenueVestimentaire(e.target.value)} placeholder="ex: Abaya, Costume, Jeans…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white" />
-    </div>
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Tenue vestimentaire habituelle</label>
+              <input value={tenueVestimentaire} onChange={(e) => setTenueVestimentaire(e.target.value)} placeholder="ex: Abaya, Costume, Jeans…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white" />
+            </div>
 
-    {gender === "femme" && (
-      <div className="mb-4">
-        <label className="block mb-2 font-semibold">Portes-tu le hijab ?</label>
-        <div className="flex gap-2">
-          <button type="button" onClick={() => setPorteHijab(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${porteHijab === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
-          <button type="button" onClick={() => setPorteHijab(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${porteHijab === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
-        </div>
-      </div>
-    )}
+            {gender === "femme" && (
+              <div className="mb-4">
+                <label className="block mb-2 font-semibold">Portes-tu le hijab ?</label>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setPorteHijab(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${porteHijab === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
+                  <button type="button" onClick={() => setPorteHijab(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${porteHijab === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
+                </div>
+              </div>
+            )}
 
-    {gender === "homme" && (
-      <div className="mb-4">
-        <label className="block mb-2 font-semibold">Portes-tu la barbe ?</label>
-        <div className="flex gap-2">
-          <button type="button" onClick={() => setPorteBarbe(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${porteBarbe === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
-          <button type="button" onClick={() => setPorteBarbe(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${porteBarbe === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
-        </div>
-      </div>
-    )}
-
-  </div>
-)}
-
-       {step === 4 && (
-  <div>
-    <h2 className="mb-4 font-serif text-xl">Religion & Pratique</h2>
-
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Fréquence de prière</label>
-      <div className="flex gap-2 flex-wrap">
-        <button type="button" onClick={() => setFrequencePriere("rarement")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${frequencePriere === "rarement" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Rarement</button>
-        <button type="button" onClick={() => setFrequencePriere("parfois")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${frequencePriere === "parfois" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Parfois</button>
-        <button type="button" onClick={() => setFrequencePriere("souvent")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${frequencePriere === "souvent" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Souvent</button>
-        <button type="button" onClick={() => setFrequencePriere("toujours")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${frequencePriere === "toujours" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Toujours</button>
-      </div>
-    </div>
-
-    {gender === "homme" && (
-      <>
-        <div className="mb-4">
-          <label className="block mb-2 font-semibold">Prières le vendredi à la mosquée ?</label>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setPriereVendredi(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${priereVendredi === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
-            <button type="button" onClick={() => setPriereVendredi(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${priereVendredi === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
+            {gender === "homme" && (
+              <div className="mb-4">
+                <label className="block mb-2 font-semibold">Portes-tu la barbe ?</label>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setPorteBarbe(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${porteBarbe === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
+                  <button type="button" onClick={() => setPorteBarbe(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${porteBarbe === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-        <div className="mb-4">
-          <label className="block mb-2 font-semibold">Ton rapport à la mosquée</label>
-          <textarea rows={2} value={rapportMosquee} onChange={(e) => setRapportMosquee(e.target.value)} placeholder="Ex: J'y vais régulièrement…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white resize-none" />
-        </div>
-      </>
-    )}
+        )}
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Ton rapport au Coran</label>
-      <textarea rows={2} value={rapportCoran} onChange={(e) => setRapportCoran(e.target.value)} placeholder="Ex: Je le récite chaque soir…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white resize-none" />
-    </div>
+        {step === 4 && (
+          <div>
+            <h2 className="mb-4 font-serif text-xl">Religion & Pratique</h2>
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Ton rapport à la langue arabe</label>
-      <textarea rows={2} value={rapportArabe} onChange={(e) => setRapportArabe(e.target.value)} placeholder="Ex: Notions de base, j'apprends…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white resize-none" />
-    </div>
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Fréquence de prière</label>
+              <div className="flex gap-2 flex-wrap">
+                <button type="button" onClick={() => setFrequencePriere("rarement")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${frequencePriere === "rarement" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Rarement</button>
+                <button type="button" onClick={() => setFrequencePriere("parfois")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${frequencePriere === "parfois" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Parfois</button>
+                <button type="button" onClick={() => setFrequencePriere("souvent")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${frequencePriere === "souvent" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Souvent</button>
+                <button type="button" onClick={() => setFrequencePriere("toujours")} className={`px-4 py-2 rounded-xl border text-sm transition-all ${frequencePriere === "toujours" ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Toujours</button>
+              </div>
+            </div>
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Niveau d'instruction religieuse</label>
-      <input value={niveauInstruction} onChange={(e) => setNiveauInstruction(e.target.value)} placeholder="Ex: Autodidacte, cours à la mosquée…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white" />
-    </div>
+            {gender === "homme" && (
+              <>
+                <div className="mb-4">
+                  <label className="block mb-2 font-semibold">Prières le vendredi à la mosquée ?</label>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setPriereVendredi(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${priereVendredi === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
+                    <button type="button" onClick={() => setPriereVendredi(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${priereVendredi === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
+                  </div>
+                </div>
+                <div className="mb-4">
+                  <label className="block mb-2 font-semibold">Ton rapport à la mosquée</label>
+                  <textarea rows={2} value={rapportMosquee} onChange={(e) => setRapportMosquee(e.target.value)} placeholder="Ex: J'y vais régulièrement…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white resize-none" />
+                </div>
+              </>
+            )}
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Es-tu en hijra ? <span className="text-gray-400 text-xs font-normal">(Quitter un pays non-musulman pour vivre en terre d'Islam)</span></label>
-      <div className="flex gap-2">
-        <button type="button" onClick={() => setEnHijra(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${enHijra === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
-        <button type="button" onClick={() => setEnHijra(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${enHijra === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
-      </div>
-    </div>
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Ton rapport au Coran</label>
+              <textarea rows={2} value={rapportCoran} onChange={(e) => setRapportCoran(e.target.value)} placeholder="Ex: Je le récite chaque soir…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white resize-none" />
+            </div>
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Souhaites-tu faire la hijra ?</label>
-      <div className="flex gap-2">
-        <button type="button" onClick={() => setSouhaitHijra(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${souhaitHijra === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
-        <button type="button" onClick={() => setSouhaitHijra(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${souhaitHijra === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
-      </div>
-    </div>
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Ton rapport à la langue arabe</label>
+              <textarea rows={2} value={rapportArabe} onChange={(e) => setRapportArabe(e.target.value)} placeholder="Ex: Notions de base, j'apprends…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white resize-none" />
+            </div>
 
-    {souhaitHijra && (
-      <div className="mb-4">
-        <label className="block mb-2 font-semibold">Quand envisages-tu la hijra ?</label>
-        <input value={hijraQuand} onChange={(e) => setHijraQuand(e.target.value)} placeholder="Ex: Dans 2 ans, bientôt…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white" />
-      </div>
-    )}
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Niveau d'instruction religieuse</label>
+              <input value={niveauInstruction} onChange={(e) => setNiveauInstruction(e.target.value)} placeholder="Ex: Autodidacte, cours à la mosquée…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white" />
+            </div>
 
-  </div>
-)}
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Es-tu en hijra ? <span className="text-gray-400 text-xs font-normal">(Quitter un pays non-musulman pour vivre en terre d'Islam)</span></label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setEnHijra(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${enHijra === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
+                <button type="button" onClick={() => setEnHijra(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${enHijra === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
+              </div>
+            </div>
 
-      {step === 5 && (
-  <div>
-    <h2 className="mb-4 font-serif text-xl">Projet de vie</h2>
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Souhaites-tu faire la hijra ?</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setSouhaitHijra(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${souhaitHijra === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
+                <button type="button" onClick={() => setSouhaitHijra(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${souhaitHijra === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
+              </div>
+            </div>
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Acceptes-tu de déménager ?</label>
-      <div className="flex gap-2">
-        <button type="button" onClick={() => setAccepteDemenager(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${accepteDemenager === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
-        <button type="button" onClick={() => setAccepteDemenager(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${accepteDemenager === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
-      </div>
-    </div>
+            {souhaitHijra && (
+              <div className="mb-4">
+                <label className="block mb-2 font-semibold">Quand envisages-tu la hijra ?</label>
+                <input value={hijraQuand} onChange={(e) => setHijraQuand(e.target.value)} placeholder="Ex: Dans 2 ans, bientôt…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white" />
+              </div>
+            )}
+          </div>
+        )}
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Situation de santé particulière (facultatif)</label>
-      <input value={situationSante} onChange={(e) => setSituationSante(e.target.value)} placeholder="Rien à signaler, ou préciser…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white" />
-    </div>
+        {step === 5 && (
+          <div>
+            <h2 className="mb-4 font-serif text-xl">Projet de vie</h2>
 
-    {gender === "homme" && (
-      <div className="mb-4">
-        <label className="block mb-2 font-semibold">Es-tu actuellement en situation de polygamie ?</label>
-        <div className="flex gap-2">
-          <button type="button" onClick={() => setEnPolygamie(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${enPolygamie === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
-          <button type="button" onClick={() => setEnPolygamie(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${enPolygamie === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
-        </div>
-      </div>
-    )}
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Acceptes-tu de déménager ?</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setAccepteDemenager(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${accepteDemenager === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
+                <button type="button" onClick={() => setAccepteDemenager(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${accepteDemenager === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
+              </div>
+            </div>
 
-    {gender === "femme" && (
-      <div className="mb-4">
-        <label className="block mb-2 font-semibold">Acceptes-tu la polygamie ?</label>
-        <div className="flex gap-2">
-          <button type="button" onClick={() => setAcceptePolygamie(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${acceptePolygamie === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
-          <button type="button" onClick={() => setAcceptePolygamie(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${acceptePolygamie === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
-        </div>
-      </div>
-    )}
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Situation de santé particulière (facultatif)</label>
+              <input value={situationSante} onChange={(e) => setSituationSante(e.target.value)} placeholder="Rien à signaler, ou préciser…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white" />
+            </div>
 
-  </div>
-)}
+            {gender === "homme" && (
+              <div className="mb-4">
+                <label className="block mb-2 font-semibold">Es-tu actuellement en situation de polygamie ?</label>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setEnPolygamie(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${enPolygamie === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
+                  <button type="button" onClick={() => setEnPolygamie(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${enPolygamie === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
+                </div>
+              </div>
+            )}
 
-       {step === 6 && (
-  <div>
-    <h2 className="mb-4 font-serif text-xl">Présentation libre</h2>
+            {gender === "femme" && (
+              <div className="mb-4">
+                <label className="block mb-2 font-semibold">Acceptes-tu la polygamie ?</label>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setAcceptePolygamie(true)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${acceptePolygamie === true ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Oui</button>
+                  <button type="button" onClick={() => setAcceptePolygamie(false)} className={`px-4 py-2 rounded-xl border text-sm transition-all ${acceptePolygamie === false ? "bg-gray-200 text-gray-800 border-gray-300" : "bg-white text-gray-500 border-gray-300"}`}>Non</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Présentation personnelle (max 1000 caractères)</label>
-      <textarea rows={4} maxLength={1000} value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Parle un peu de toi…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white resize-none" />
-      <span className="mt-1 text-xs text-gray-400">{bio.length}/1000</span>
-    </div>
+        {step === 6 && (
+          <div>
+            <h2 className="mb-4 font-serif text-xl">Présentation libre</h2>
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Profil recherché (max 1000 caractères)</label>
-      <textarea rows={4} maxLength={1000} value={descriptionRecherche} onChange={(e) => setDescriptionRecherche(e.target.value)} placeholder="Décris la personne que tu recherches…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white resize-none" />
-      <span className="mt-1 text-xs text-gray-400">{descriptionRecherche.length}/1000</span>
-    </div>
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Présentation personnelle (max 1000 caractères)</label>
+              <textarea rows={4} maxLength={1000} value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Parle un peu de toi…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white resize-none" />
+              <span className="mt-1 text-xs text-gray-400">{bio.length}/1000</span>
+            </div>
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Critères rédhibitoires (max 500 caractères)</label>
-      <textarea rows={3} maxLength={500} value={criteresRedhibitoires} onChange={(e) => setCriteresRedhibitoires(e.target.value)} placeholder="Ce que tu ne peux pas accepter…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white resize-none" />
-      <span className="mt-1 text-xs text-gray-400">{criteresRedhibitoires.length}/500</span>
-    </div>
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Profil recherché (max 1000 caractères)</label>
+              <textarea rows={4} maxLength={1000} value={descriptionRecherche} onChange={(e) => setDescriptionRecherche(e.target.value)} placeholder="Décris la personne que tu recherches…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white resize-none" />
+              <span className="mt-1 text-xs text-gray-400">{descriptionRecherche.length}/1000</span>
+            </div>
 
-    <div className="mb-4">
-      <label className="block mb-2 font-semibold">Photo de profil</label>
-      {photoPreview ? (
-        <div className="mb-2">
-          <img src={photoPreview} alt="Aperçu" className="aspect-square w-32 rounded-xl object-cover" />
-        </div>
-      ) : (
-        <div className="mb-2 flex aspect-square w-32 items-center justify-center rounded-xl bg-gray-100 text-xs text-gray-400">
-          Aucune photo
-        </div>
-      )}
-      <label className="cursor-pointer inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50">
-        <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
-        Choisir une photo
-      </label>
-    </div>
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Critères rédhibitoires (max 500 caractères)</label>
+              <textarea rows={3} maxLength={500} value={criteresRedhibitoires} onChange={(e) => setCriteresRedhibitoires(e.target.value)} placeholder="Ce que tu ne peux pas accepter…" className="border border-gray-300 rounded-xl px-3 py-2 text-sm w-full bg-white resize-none" />
+              <span className="mt-1 text-xs text-gray-400">{criteresRedhibitoires.length}/500</span>
+            </div>
 
-    <p className="mt-3 rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-400">
-      Ton profil sera examiné par notre équipe avant d'être visible. Cela prend généralement 24h.
-    </p>
+            <div className="mb-4">
+              <label className="block mb-2 font-semibold">Photos de profil (1 à {MAX_PHOTOS}) *</label>
+              <p className="mb-2 text-xs text-gray-400">La première photo sera ta photo principale.</p>
 
-  </div>
-)}
-        )
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                {photoPreviews.map((preview, index) => (
+                  <div key={index} className="relative aspect-square">
+                    <img src={preview} alt="" className="h-full w-full rounded-xl object-cover" />
+                    {index === 0 && (
+                      <span className="absolute left-1 top-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                        Principale
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(index)}
+                      className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+
+                {photoFiles.length < MAX_PHOTOS && (
+                  <label className="flex aspect-square cursor-pointer items-center justify-center rounded-xl border-2 border-dashed border-gray-300 text-xs text-gray-400 hover:bg-gray-50">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={handlePhotosChange}
+                    />
+                    + Ajouter
+                  </label>
+                )}
+              </div>
+            </div>
+
+            <p className="mt-3 rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-400">
+              Ton profil sera examiné par notre équipe avant d'être visible. Cela prend généralement 24h.
+            </p>
+          </div>
+        )}
 
         {/* Erreur */}
         {error && (

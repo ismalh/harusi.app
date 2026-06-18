@@ -1,7 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { HarusiLogo } from "@/components/HarusiLogo";
+import { MessageCircle } from "lucide-react";
 
 export const Route = createFileRoute("/wali/$token")({
   component: WaliPage,
@@ -9,53 +10,42 @@ export const Route = createFileRoute("/wali/$token")({
 
 function WaliPage() {
   const { token } = Route.useParams();
-  const [messages, setMessages] = useState<any[]>([]);
-  const [profiles, setProfiles] = useState<Record<string, any>>({});
+  const [conversations, setConversations] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      // Lookup token
-      const { data: tokenRow, error: tokenErr } = await supabase
-        .from("wali_tokens")
-        .select("*")
-        .eq("token", token)
-        .maybeSingle();
+      const { data, error: rpcError } = await (supabase as any).rpc("get_wali_conversations", {
+        _token: token,
+      });
 
-      if (tokenErr || !tokenRow) {
-        setError("Lien invalide ou expiré.");
+      if (rpcError || !data || data.length === 0) {
+        // Vérifier si le token existe mais sans conversation, ou s'il n'existe pas / a expiré
+        const { data: tokenRow } = await (supabase as any)
+          .from("wali_tokens")
+          .select("expires_at")
+          .eq("token", token)
+          .is("conversation_id", null)
+          .maybeSingle();
+
+        if (!tokenRow) {
+          setError("Lien invalide ou expiré.");
+          setLoading(false);
+          return;
+        }
+        if (new Date(tokenRow.expires_at) < new Date()) {
+          setError("Ce lien a expiré (valide 30 jours).");
+          setLoading(false);
+          return;
+        }
+        // Token valide mais aucune conversation encore
+        setConversations([]);
         setLoading(false);
         return;
       }
 
-      if (new Date(tokenRow.expires_at) < new Date()) {
-        setError("Ce lien a expiré (valide 30 jours).");
-        setLoading(false);
-        return;
-      }
-
-      // Load messages
-      const { data: msgs } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", tokenRow.conversation_id)
-        .order("created_at");
-
-      setMessages(msgs ?? []);
-
-      // Load profiles
-      const ids = [...new Set((msgs ?? []).map((m: any) => m.sender_id))];
-      if (ids.length) {
-        const { data: profs } = await supabase
-          .from("profiles")
-          .select("id, first_name, gender")
-          .in("id", ids);
-        const map: Record<string, any> = {};
-        for (const p of profs ?? []) map[p.id] = p;
-        setProfiles(map);
-      }
-
+      setConversations(data);
       setLoading(false);
     })();
   }, [token]);
@@ -76,27 +66,31 @@ function WaliPage() {
         {!loading && !error && (
           <>
             <div className="mb-4 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
-              Cette page vous donne accès en lecture seule à la conversation, conformément aux exigences islamiques de supervision.
+              Cette page vous donne accès en lecture seule aux conversations, conformément aux exigences islamiques de supervision.
             </div>
-            <div className="space-y-3">
-              {messages.map((m) => {
-                const sender = profiles[m.sender_id];
-                return (
-                  <div key={m.id} className="rounded-xl border border-border bg-card px-4 py-3">
-                    <div className="mb-1 flex items-center justify-between">
-                      <span className="text-xs font-medium">{sender?.first_name ?? "—"}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(m.created_at).toLocaleString("fr-FR")}
-                      </span>
+
+            {conversations.length === 0 ? (
+              <p className="text-center text-sm text-muted-foreground">Aucune conversation pour l'instant.</p>
+            ) : (
+              <div className="space-y-2">
+                {conversations.map((c) => (
+                  <Link
+                    key={c.conversation_id}
+                    to="/wali/$token/$convId"
+                    params={{ token, convId: c.conversation_id }}
+                    className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 hover:bg-muted"
+                  >
+                    <MessageCircle className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{c.other_first_name ?? "Conversation"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Dernière activité : {new Date(c.updated_at).toLocaleDateString("fr-FR")}
+                      </p>
                     </div>
-                    <p className="text-sm">{m.body}</p>
-                  </div>
-                );
-              })}
-              {messages.length === 0 && (
-                <p className="text-center text-sm text-muted-foreground">Aucun message pour l'instant.</p>
-              )}
-            </div>
+                  </Link>
+                ))}
+              </div>
+            )}
           </>
         )}
       </main>

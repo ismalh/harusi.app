@@ -27,7 +27,7 @@ function ChatPage() {
 
   async function refreshDailyCount(userId: string) {
     const { data } = await (supabase as any).rpc("count_messages_today", { _user_id: userId });
-    setMessagesSentToday(data ?? 0);
+    setMessagesSentToday((data as number) ?? 0);
   }
 
   useEffect(() => {
@@ -77,14 +77,17 @@ function ChatPage() {
         .neq("sender_id", auth.user.id)
         .is("read_at", null);
 
-      // Vérifier si token wali existe déjà pour cette conv
-      const { data: existingToken } = await supabase
-        .from("wali_tokens")
-        .select("token")
-        .eq("conversation_id", id)
-        .maybeSingle();
-      if (existingToken) {
-        setWaliLink(`${window.location.origin}/wali/${existingToken.token}`);
+      // Vérifier si un token wali GLOBAL existe déjà pour cette utilisatrice (femme uniquement)
+      if (myProf?.gender === "femme") {
+        const { data: existingToken } = await (supabase as any)
+          .from("wali_tokens")
+          .select("token")
+          .eq("wali_user_id", auth.user.id)
+          .is("conversation_id", null)
+          .maybeSingle();
+        if (existingToken) {
+          setWaliLink(`${window.location.origin}/wali/${existingToken.token}`);
+        }
       }
 
       channel = supabase
@@ -142,10 +145,12 @@ function ChatPage() {
   }
 
   async function generateWaliLink() {
+    if (!me) return;
     setGeneratingLink(true);
-    const { data } = await supabase
+    // Token GLOBAL : pas lié à une conversation_id précise
+    const { data } = await (supabase as any)
       .from("wali_tokens")
-      .insert({ conversation_id: id })
+      .insert({ wali_user_id: me, conversation_id: null })
       .select("token")
       .single();
     if (data) {
@@ -189,7 +194,7 @@ function ChatPage() {
         </div>
       </main>
 
-      {/* Lien wali — femmes uniquement */}
+      {/* Lien wali GLOBAL — femmes uniquement */}
       {myGender === "femme" && (
         <div className="border-t border-border bg-background px-4 py-2">
           <div className="mx-auto max-w-2xl">

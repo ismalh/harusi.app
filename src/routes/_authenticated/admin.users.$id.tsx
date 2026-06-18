@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { AdminShell } from "@/components/AdminShell";
 import { setProfileStatus, deleteProfile, setUserRole } from "@/lib/admin.functions";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Check, X } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin/users/$id")({
   component: UserDetail,
@@ -17,6 +17,7 @@ function UserDetail() {
   const del = useServerFn(deleteProfile);
   const navigate = useNavigate();
   const [d, setD] = useState<any>(null);
+  const [photos, setPhotos] = useState<any[]>([]);
 
   async function load() {
     const { data: prof } = await supabase.from("profiles").select("*").eq("id", id).maybeSingle();
@@ -32,6 +33,25 @@ function UserDetail() {
     ]);
     const { data: roles } = await (supabase as any).rpc("has_role", { _user_id: id, _role: "admin" });
     setD({ profile: { ...prof, photo_signed }, msg_count: msg_count ?? 0, report_count: report_count ?? 0, roles: roles ? ["admin"] : [] });
+
+    // Charger toutes les photos avec URL signée
+    const { data: photosData } = await (supabase as any)
+      .from("profile_photos")
+      .select("*")
+      .eq("user_id", id)
+      .order("position");
+
+    const enriched = [];
+    for (const photo of photosData ?? []) {
+      const { data: s } = await supabase.storage.from("profile-photos").createSignedUrl(photo.url, 3600);
+      enriched.push({ ...photo, signedUrl: s?.signedUrl ?? null });
+    }
+    setPhotos(enriched);
+  }
+
+  async function setPhotoStatus(photoId: string, status: "approved" | "rejected") {
+    await (supabase as any).from("profile_photos").update({ status }).eq("id", photoId);
+    load();
   }
 
   useEffect(() => { load(); }, [id]);
@@ -64,6 +84,60 @@ function UserDetail() {
           <p><b>Signalements reçus :</b> {d.report_count}</p>
         </div>
       </div>
+
+      {/* Modération des photos */}
+      {photos.length > 0 && (
+        <div className="mt-6 rounded-xl border border-border bg-card p-4">
+          <h2 className="mb-3 text-sm font-medium">Photos à modérer ({photos.length})</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+            {photos.map((photo) => (
+              <div key={photo.id} className="space-y-2">
+                <div className="relative aspect-square overflow-hidden rounded-lg border border-border">
+                  {photo.signedUrl ? (
+                    <img src={photo.signedUrl} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="h-full w-full bg-muted" />
+                  )}
+                  {photo.is_main && (
+                    <span className="absolute left-1 top-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                      Principale
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span
+                    className={`rounded-full px-2 py-0.5 font-medium ${
+                      photo.status === "approved"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : photo.status === "rejected"
+                        ? "bg-red-50 text-red-700"
+                        : "bg-amber-50 text-amber-700"
+                    }`}
+                  >
+                    {photo.status === "approved" ? "Approuvée" : photo.status === "rejected" ? "Rejetée" : "En attente"}
+                  </span>
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => setPhotoStatus(photo.id, "approved")}
+                    disabled={photo.status === "approved"}
+                    className="flex-1 inline-flex items-center justify-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 py-1 text-xs text-emerald-700 disabled:opacity-40"
+                  >
+                    <Check className="h-3 w-3" />
+                  </button>
+                  <button
+                    onClick={() => setPhotoStatus(photo.id, "rejected")}
+                    disabled={photo.status === "rejected"}
+                    className="flex-1 inline-flex items-center justify-center gap-1 rounded-md border border-red-300 bg-red-50 py-1 text-xs text-red-700 disabled:opacity-40"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 space-y-3 rounded-xl border border-border bg-card p-4">
         <h2 className="text-sm font-medium">Actions de modération</h2>

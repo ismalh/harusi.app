@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, Heart, Flag, BadgeCheck } from "lucide-react";
+import { ArrowLeft, Heart, Flag, BadgeCheck, ChevronLeft, ChevronRight } from "lucide-react";
 import { islandLabel } from "@/lib/islands";
 
 export const Route = createFileRoute("/_authenticated/profil/$id")({
@@ -12,7 +12,8 @@ function ProfilPage() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
   const [p, setP] = useState<any>(null);
-  const [photo, setPhoto] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [photoIndex, setPhotoIndex] = useState(0);
   const [me, setMe] = useState<string | null>(null);
   const [demandeStatus, setDemandeStatus] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -25,10 +26,27 @@ function ProfilPage() {
 
       const { data } = await supabase.from("profiles").select("*").eq("id", id).maybeSingle();
       setP(data);
-      if (data?.photo_url) {
-        const { data: s } = await supabase.storage.from("profile-photos").createSignedUrl(data.photo_url, 3600);
-        setPhoto(s?.signedUrl ?? null);
+
+      // Charger toutes les photos approuvées, triées par position
+      const { data: photosData } = await (supabase as any)
+        .from("profile_photos")
+        .select("url, position")
+        .eq("user_id", id)
+        .eq("status", "approved")
+        .order("position");
+
+      const urls: string[] = [];
+      for (const photo of photosData ?? []) {
+        const { data: s } = await supabase.storage.from("profile-photos").createSignedUrl(photo.url, 3600);
+        if (s?.signedUrl) urls.push(s.signedUrl);
       }
+
+      // Fallback : si pas de photos dans profile_photos, utiliser photo_url
+      if (urls.length === 0 && data?.photo_url) {
+        const { data: s } = await supabase.storage.from("profile-photos").createSignedUrl(data.photo_url, 3600);
+        if (s?.signedUrl) urls.push(s.signedUrl);
+      }
+      setPhotos(urls);
 
       const { data: req } = await supabase
         .from("match_requests")
@@ -66,6 +84,14 @@ function ProfilPage() {
     alert("Merci, le signalement a été envoyé.");
   }
 
+  function nextPhoto() {
+    setPhotoIndex((i) => (i + 1) % photos.length);
+  }
+
+  function prevPhoto() {
+    setPhotoIndex((i) => (i - 1 + photos.length) % photos.length);
+  }
+
   if (!p) return <div className="grid min-h-dvh place-items-center">Chargement…</div>;
 
   return (
@@ -77,12 +103,41 @@ function ProfilPage() {
       </header>
       <main className="mx-auto max-w-md px-4 py-4">
         <div className="relative">
-          {photo && <img src={photo} alt="" className="aspect-square w-full rounded-xl object-cover" />}
-          {!photo && <div className="aspect-square w-full rounded-xl bg-muted" />}
+          {photos.length > 0 ? (
+            <img src={photos[photoIndex]} alt="" className="aspect-square w-full rounded-xl object-cover" />
+          ) : (
+            <div className="aspect-square w-full rounded-xl bg-muted" />
+          )}
+
           {p.plan === "premium" && (
             <span className="absolute right-2 top-2 rounded-full bg-amber-500 px-2 py-1 text-xs font-bold text-white">
               Premium
             </span>
+          )}
+
+          {photos.length > 1 && (
+            <>
+              <button
+                onClick={prevPhoto}
+                className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/40 p-1.5 text-white hover:bg-black/60"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                onClick={nextPhoto}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/40 p-1.5 text-white hover:bg-black/60"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+              <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1">
+                {photos.map((_, i) => (
+                  <span
+                    key={i}
+                    className={`h-1.5 w-1.5 rounded-full ${i === photoIndex ? "bg-white" : "bg-white/40"}`}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </div>
 

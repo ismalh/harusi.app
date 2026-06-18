@@ -24,6 +24,7 @@ import { Route as AuthenticatedDemandesRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedConversationsRouteImport } from './routes/_authenticated/conversations'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
+import { Route as WaliTokenConvIdRouteImport } from './routes/wali.$token.$convId'
 import { Route as AuthenticatedProfilIdRouteImport } from './routes/_authenticated/profil.$id'
 import { Route as AuthenticatedChatIdRouteImport } from './routes/_authenticated/chat.$id'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
@@ -107,6 +108,11 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedAdminRoute,
 } as any)
+const WaliTokenConvIdRoute = WaliTokenConvIdRouteImport.update({
+  id: '/$convId',
+  path: '/$convId',
+  getParentRoute: () => WaliTokenRoute,
+} as any)
 const AuthenticatedProfilIdRoute = AuthenticatedProfilIdRouteImport.update({
   id: '/profil/$id',
   path: '/profil/$id',
@@ -160,12 +166,13 @@ export interface FileRoutesByFullPath {
   '/mon-profil': typeof AuthenticatedMonProfilRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/parametres': typeof AuthenticatedParametresRoute
-  '/wali/$token': typeof WaliTokenRoute
+  '/wali/$token': typeof WaliTokenRouteWithChildren
   '/admin/conversations': typeof AuthenticatedAdminConversationsRouteWithChildren
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRouteWithChildren
   '/chat/$id': typeof AuthenticatedChatIdRoute
   '/profil/$id': typeof AuthenticatedProfilIdRoute
+  '/wali/$token/$convId': typeof WaliTokenConvIdRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/admin/conversations/$id': typeof AuthenticatedAdminConversationsIdRoute
   '/admin/users/$id': typeof AuthenticatedAdminUsersIdRoute
@@ -182,12 +189,13 @@ export interface FileRoutesByTo {
   '/mon-profil': typeof AuthenticatedMonProfilRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/parametres': typeof AuthenticatedParametresRoute
-  '/wali/$token': typeof WaliTokenRoute
+  '/wali/$token': typeof WaliTokenRouteWithChildren
   '/admin/conversations': typeof AuthenticatedAdminConversationsRouteWithChildren
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRouteWithChildren
   '/chat/$id': typeof AuthenticatedChatIdRoute
   '/profil/$id': typeof AuthenticatedProfilIdRoute
+  '/wali/$token/$convId': typeof WaliTokenConvIdRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/admin/conversations/$id': typeof AuthenticatedAdminConversationsIdRoute
   '/admin/users/$id': typeof AuthenticatedAdminUsersIdRoute
@@ -207,12 +215,13 @@ export interface FileRoutesById {
   '/_authenticated/mon-profil': typeof AuthenticatedMonProfilRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/parametres': typeof AuthenticatedParametresRoute
-  '/wali/$token': typeof WaliTokenRoute
+  '/wali/$token': typeof WaliTokenRouteWithChildren
   '/_authenticated/admin/conversations': typeof AuthenticatedAdminConversationsRouteWithChildren
   '/_authenticated/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRouteWithChildren
   '/_authenticated/chat/$id': typeof AuthenticatedChatIdRoute
   '/_authenticated/profil/$id': typeof AuthenticatedProfilIdRoute
+  '/wali/$token/$convId': typeof WaliTokenConvIdRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/admin/conversations/$id': typeof AuthenticatedAdminConversationsIdRoute
   '/_authenticated/admin/users/$id': typeof AuthenticatedAdminUsersIdRoute
@@ -238,6 +247,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/chat/$id'
     | '/profil/$id'
+    | '/wali/$token/$convId'
     | '/admin/'
     | '/admin/conversations/$id'
     | '/admin/users/$id'
@@ -260,6 +270,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/chat/$id'
     | '/profil/$id'
+    | '/wali/$token/$convId'
     | '/admin'
     | '/admin/conversations/$id'
     | '/admin/users/$id'
@@ -284,6 +295,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/users'
     | '/_authenticated/chat/$id'
     | '/_authenticated/profil/$id'
+    | '/wali/$token/$convId'
     | '/_authenticated/admin/'
     | '/_authenticated/admin/conversations/$id'
     | '/_authenticated/admin/users/$id'
@@ -296,7 +308,7 @@ export interface RootRouteChildren {
   ConnexionRoute: typeof ConnexionRoute
   PrivacyRoute: typeof PrivacyRoute
   ReglesRoute: typeof ReglesRoute
-  WaliTokenRoute: typeof WaliTokenRoute
+  WaliTokenRoute: typeof WaliTokenRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -405,6 +417,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/wali/$token/$convId': {
+      id: '/wali/$token/$convId'
+      path: '/$convId'
+      fullPath: '/wali/$token/$convId'
+      preLoaderRoute: typeof WaliTokenConvIdRouteImport
+      parentRoute: typeof WaliTokenRoute
     }
     '/_authenticated/profil/$id': {
       id: '/_authenticated/profil/$id'
@@ -532,6 +551,18 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
 const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
+interface WaliTokenRouteChildren {
+  WaliTokenConvIdRoute: typeof WaliTokenConvIdRoute
+}
+
+const WaliTokenRouteChildren: WaliTokenRouteChildren = {
+  WaliTokenConvIdRoute: WaliTokenConvIdRoute,
+}
+
+const WaliTokenRouteWithChildren = WaliTokenRoute._addFileChildren(
+  WaliTokenRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
@@ -539,7 +570,7 @@ const rootRouteChildren: RootRouteChildren = {
   ConnexionRoute: ConnexionRoute,
   PrivacyRoute: PrivacyRoute,
   ReglesRoute: ReglesRoute,
-  WaliTokenRoute: WaliTokenRoute,
+  WaliTokenRoute: WaliTokenRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
