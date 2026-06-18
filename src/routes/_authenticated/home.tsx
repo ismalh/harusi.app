@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { HarusiLogo } from "@/components/HarusiLogo";
 import { ISLANDS, islandLabel } from "@/lib/islands";
-import { MessageCircle, User, Shield, LogOut, Bell, SlidersHorizontal, X, BadgeCheck } from "lucide-react";
+import { MessageCircle, User, Shield, Settings, Bell, SlidersHorizontal, X, BadgeCheck } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/home")({
   ssr: false,
@@ -20,7 +20,6 @@ function HomePage() {
   const [showFilters, setShowFilters] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Filtres
   const [island, setIsland] = useState("");
   const [ageMin, setAgeMin] = useState("");
   const [ageMax, setAgeMax] = useState("");
@@ -38,9 +37,7 @@ function HomePage() {
       .not("first_name", "is", null)
       .limit(50)) as any;
 
-    // Genre opposé
     if (myProf?.looking_for) q = q.eq("gender", myProf.looking_for);
-
     if (island) q = q.eq("island", island as any);
     if (ageMin) q = q.gte("age", parseInt(ageMin));
     if (ageMax) q = q.lte("age", parseInt(ageMax));
@@ -49,7 +46,6 @@ function HomePage() {
     if (enHijra) q = q.eq("en_hijra", enHijra === "oui");
     if (acceptePolygamie && myProf?.gender === "homme") q = q.eq("accepte_polygamie", acceptePolygamie === "oui");
 
-    // Priorité aux profils premium, puis les plus récents
     q = q.order("plan", { ascending: false }).order("created_at", { ascending: false });
 
     const { data: list } = await q;
@@ -75,15 +71,12 @@ function HomePage() {
       const { data: modData } = await (supabase as any).rpc("has_role", { _user_id: auth.user.id, _role: "moderator" });
       setIsAdmin(!!roleData || !!modData);
 
-      // Demandes en attente
       const { count } = await supabase
         .from("match_requests")
         .select("id", { count: "exact", head: true })
         .eq("receiver_id", auth.user.id)
         .eq("status", "pending");
       setPendingCount(count ?? 0);
-
-      let unreadChannel: any;
 
       const { data: myConvs } = await supabase
         .from("conversations")
@@ -100,8 +93,7 @@ function HomePage() {
         setUnreadCount(unread ?? 0);
       }
 
-      // Rafraîchir le badge en temps réel
-      unreadChannel = supabase
+      const unreadChannel = supabase
         .channel("unread-badge")
         .on("postgres_changes", { event: "*", schema: "public", table: "messages" },
           async () => {
@@ -137,11 +129,6 @@ function HomePage() {
     if (me) loadProfiles(me);
   }, [island, ageMin, ageMax, statutMatrimonial, frequencePriere, enHijra, acceptePolygamie]);
 
-  async function logout() {
-    await supabase.auth.signOut();
-    navigate({ to: "/connexion" });
-  }
-
   return (
     <div className="min-h-dvh bg-background">
       <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
@@ -172,14 +159,13 @@ function HomePage() {
                 <Shield className="h-5 w-5" />
               </Link>
             )}
-            <button onClick={logout} className="flex h-11 w-11 items-center justify-center rounded-md hover:bg-muted active:bg-muted">
-              <LogOut className="h-5 w-5" />
-            </button>
+            <Link to="/parametres" className="flex h-11 w-11 items-center justify-center rounded-md hover:bg-muted active:bg-muted">
+              <Settings className="h-5 w-5" />
+            </Link>
           </nav>
         </div>
       </header>
 
-      {/* Filtres */}
       <div className="border-b border-border bg-card">
         <div className="mx-auto max-w-2xl px-4">
           <button
