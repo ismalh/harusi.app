@@ -130,7 +130,7 @@ function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // ✅ REMPLACÉ
+  // ✅ CORRIGÉ : try/catch + supabase.functions.invoke (gère l'auth automatiquement)
   async function send(e: React.FormEvent) {
     e.preventDefault();
 
@@ -139,23 +139,28 @@ function ChatPage() {
     const content = text.trim().slice(0, 2000);
     setWarning(null);
 
-    const checkRes = await fetch(
-      "https://bxhhotffzetzvmriciiy.supabase.co/functions/v1/check-message",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+    try {
+      const { data: check, error } = await supabase.functions.invoke("check-message", {
+        body: {
           userId: me,
           conversationId: id,
           message: content,
-        }),
+        },
+      });
+
+      if (error) {
+        console.error("check-message error:", error);
+        setWarning("Erreur de vérification, réessaie.");
+        return;
       }
-    );
 
-    const check = await checkRes.json();
-
-    if (!check.allowed) {
-      setWarning(check.reason);
+      if (!check?.allowed) {
+        setWarning(check?.reason ?? "Message bloqué.");
+        return;
+      }
+    } catch (err) {
+      console.error("check-message exception:", err);
+      setWarning("Erreur de vérification, réessaie.");
       return;
     }
 
