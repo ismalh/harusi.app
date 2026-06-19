@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { HarusiLogo } from "@/components/HarusiLogo";
 import { ISLANDS, islandLabel } from "@/lib/islands";
-import { MessageCircle, User, Shield, Settings, Bell, SlidersHorizontal, X, BadgeCheck } from "lucide-react";
+import { MessageCircle, User, Shield, Settings, Bell, SlidersHorizontal, X, BadgeCheck, Home } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/home")({
   ssr: false,
@@ -130,39 +130,16 @@ function HomePage() {
   }, [island, ageMin, ageMax, statutMatrimonial, frequencePriere, enHijra, acceptePolygamie]);
 
   return (
-    <div className="min-h-dvh bg-background">
+    <div className="min-h-dvh bg-background pb-20">
+      {/* Header simplifié */}
       <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
           <HarusiLogo size="sm" />
-          <nav className="flex items-center gap-0.5 text-xs">
-            <Link to="/mon-profil" className="flex h-11 w-11 items-center justify-center rounded-md hover:bg-muted active:bg-muted">
-              <User className="h-5 w-5" />
+          {isAdmin && (
+            <Link to="/admin" className="flex h-10 w-10 items-center justify-center rounded-md hover:bg-muted active:bg-muted">
+              <Shield className="h-5 w-5" />
             </Link>
-            <Link to="/conversations" className="relative flex h-11 w-11 items-center justify-center rounded-md hover:bg-muted active:bg-muted">
-              <MessageCircle className="h-5 w-5" />
-              {unreadCount > 0 && (
-                <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                  {unreadCount}
-                </span>
-              )}
-            </Link>
-            <Link to="/demandes" className="relative flex h-11 w-11 items-center justify-center rounded-md hover:bg-muted active:bg-muted">
-              <Bell className="h-5 w-5" />
-              {pendingCount > 0 && (
-                <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                  {pendingCount}
-                </span>
-              )}
-            </Link>
-            {isAdmin && (
-              <Link to="/admin" className="flex h-11 w-11 items-center justify-center rounded-md hover:bg-muted active:bg-muted">
-                <Shield className="h-5 w-5" />
-              </Link>
-            )}
-            <Link to="/parametres" className="flex h-11 w-11 items-center justify-center rounded-md hover:bg-muted active:bg-muted">
-              <Settings className="h-5 w-5" />
-            </Link>
-          </nav>
+          )}
         </div>
       </header>
 
@@ -274,6 +251,60 @@ function HomePage() {
           <p className="mt-8 text-center text-sm text-muted-foreground">Aucun profil pour le moment.</p>
         )}
       </main>
+
+      {/* Tab bar fixe en bas */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-background/95 backdrop-blur"
+        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+      >
+        <div className="mx-auto flex max-w-2xl items-stretch justify-around">
+          <Link
+            to="/home"
+            className="flex flex-1 flex-col items-center gap-0.5 py-2.5 text-primary"
+          >
+            <Home className="h-5 w-5" />
+            <span className="text-[11px] font-medium">Accueil</span>
+          </Link>
+          <Link
+            to="/conversations"
+            className="relative flex flex-1 flex-col items-center gap-0.5 py-2.5 text-muted-foreground active:text-foreground"
+          >
+            <MessageCircle className="h-5 w-5" />
+            <span className="text-[11px]">Messages</span>
+            {unreadCount > 0 && (
+              <span className="absolute right-[28%] top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                {unreadCount}
+              </span>
+            )}
+          </Link>
+          <Link
+            to="/demandes"
+            className="relative flex flex-1 flex-col items-center gap-0.5 py-2.5 text-muted-foreground active:text-foreground"
+          >
+            <Bell className="h-5 w-5" />
+            <span className="text-[11px]">Demandes</span>
+            {pendingCount > 0 && (
+              <span className="absolute right-[28%] top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                {pendingCount}
+              </span>
+            )}
+          </Link>
+          <Link
+            to="/mon-profil"
+            className="flex flex-1 flex-col items-center gap-0.5 py-2.5 text-muted-foreground active:text-foreground"
+          >
+            <User className="h-5 w-5" />
+            <span className="text-[11px]">Profil</span>
+          </Link>
+          <Link
+            to="/parametres"
+            className="flex flex-1 flex-col items-center gap-0.5 py-2.5 text-muted-foreground active:text-foreground"
+          >
+            <Settings className="h-5 w-5" />
+            <span className="text-[11px]">Réglages</span>
+          </Link>
+        </div>
+      </nav>
     </div>
   );
 }

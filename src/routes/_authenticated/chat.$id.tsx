@@ -21,6 +21,10 @@ function ChatPage() {
   const [messagesSentToday, setMessagesSentToday] = useState(0);
   const [waliLink, setWaliLink] = useState<string | null>(null);
   const [generatingLink, setGeneratingLink] = useState(false);
+
+  // ✅ AJOUT
+  const [warning, setWarning] = useState<string | null>(null);
+
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const limitReached = myPlan === "free" && messagesSentToday >= DAILY_LIMIT;
@@ -77,7 +81,6 @@ function ChatPage() {
         .neq("sender_id", auth.user.id)
         .is("read_at", null);
 
-      // Vérifier si un token wali existe déjà pour CETTE conv
       if (myProf?.gender === "femme") {
         const { data: existingToken } = await (supabase as any)
           .from("wali_tokens")
@@ -85,6 +88,7 @@ function ChatPage() {
           .eq("wali_user_id", auth.user.id)
           .eq("conversation_id", id)
           .maybeSingle();
+
         if (existingToken) {
           setWaliLink(`${window.location.origin}/wali/${existingToken.token}`);
         }
@@ -106,6 +110,7 @@ function ChatPage() {
           .eq("conversation_id", id)
           .order("created_at");
         setMessages(data ?? []);
+
         await supabase
           .from("messages")
           .update({ read_at: new Date().toISOString() })
@@ -114,6 +119,7 @@ function ChatPage() {
           .is("read_at", null);
       }, 2000);
     })();
+
     return () => {
       if (channel) supabase.removeChannel(channel);
       if (poll) clearInterval(poll);
@@ -124,33 +130,63 @@ function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // ✅ REMPLACÉ
   async function send(e: React.FormEvent) {
     e.preventDefault();
+
     if (!text.trim() || !me || limitReached) return;
+
     const content = text.trim().slice(0, 2000);
+    setWarning(null);
+
+    const checkRes = await fetch(
+      "https://bxhhotffzetzvmriciiy.supabase.co/functions/v1/check-message",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: me,
+          conversationId: id,
+          message: content,
+        }),
+      }
+    );
+
+    const check = await checkRes.json();
+
+    if (!check.allowed) {
+      setWarning(check.reason);
+      return;
+    }
+
     setText("");
+
     await supabase
       .from("messages")
       .insert({ conversation_id: id, sender_id: me, body: content });
+
     await supabase
       .from("conversations")
       .update({ updated_at: new Date().toISOString() })
       .eq("id", id);
+
     await refreshDailyCount(me);
   }
 
   async function generateWaliLink() {
     if (!me) return;
     setGeneratingLink(true);
-    // Token lié à CETTE conversation uniquement
+
     const { data } = await (supabase as any)
       .from("wali_tokens")
       .insert({ wali_user_id: me, conversation_id: id })
       .select("token")
       .single();
+
     if (data) {
       setWaliLink(`${window.location.origin}/wali/${data.token}`);
     }
+
     setGeneratingLink(false);
   }
 
@@ -167,11 +203,13 @@ function ChatPage() {
         <div className="mx-auto max-w-2xl space-y-2">
           {messages.map((m) => (
             <div key={m.id} className={`flex ${m.sender_id === me ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                m.sender_id === me
-                  ? "bg-amber-800 text-amber-50 dark:bg-amber-900 dark:text-amber-50"
-                  : "bg-card border border-border text-foreground"
-              }`}>
+              <div
+                className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                  m.sender_id === me
+                    ? "bg-amber-800 text-amber-50 dark:bg-amber-900 dark:text-amber-50"
+                    : "bg-card border border-border text-foreground"
+                }`}
+              >
                 {m.body}
               </div>
             </div>
@@ -180,7 +218,7 @@ function ChatPage() {
         </div>
       </main>
 
-      {/* Lien wali — femmes uniquement */}
+      {/* Lien wali */}
       {myGender === "femme" && (
         <div className="border-t border-border bg-background px-4 py-2">
           <div className="mx-auto max-w-2xl">
@@ -217,11 +255,22 @@ function ChatPage() {
             <Lock className="h-4 w-4 shrink-0" />
             <p>
               Tu as atteint la limite de {DAILY_LIMIT} messages gratuits aujourd'hui.{" "}
-              <button onClick={() => navigate({ to: "/parametres" })} className="font-medium underline underline-offset-2">
+              <button
+                onClick={() => navigate({ to: "/parametres" })}
+                className="font-medium underline underline-offset-2"
+              >
                 Passer en Premium
-              </button>{" "}
-              pour des messages illimités.
+              </button>
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ AJOUT WARNING */}
+      {warning && (
+        <div className="border-t border-red-200 bg-red-50 px-4 py-3">
+          <div className="mx-auto max-w-2xl text-sm text-red-800">
+            {warning}
           </div>
         </div>
       )}
@@ -236,10 +285,15 @@ function ChatPage() {
             disabled={limitReached}
             className="flex-1 rounded-full border border-border bg-card px-4 py-2 text-sm outline-none disabled:opacity-50"
           />
-          <button type="submit" disabled={limitReached} className="rounded-full bg-primary p-2 text-primary-foreground disabled:opacity-50">
+          <button
+            type="submit"
+            disabled={limitReached}
+            className="rounded-full bg-primary p-2 text-primary-foreground disabled:opacity-50"
+          >
             <Send className="h-4 w-4" />
           </button>
         </div>
+
         {myPlan === "free" && !limitReached && (
           <p className="mx-auto mt-1.5 max-w-2xl px-2 text-center text-xs text-muted-foreground">
             {messagesSentToday}/{DAILY_LIMIT} messages aujourd'hui
